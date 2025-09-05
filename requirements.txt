@@ -21,3 +21,15 @@ scipy>=1.16.1
 seaborn>=0.13.2
 streamlit>=1.49.1
 groq>=0.4.1
+chardet
+groq
+matplotlib
+numpy
+openpyxl
+pandas
+plotly
+reportlab
+scikit-learn
+scipy
+seaborn
+streamlit
