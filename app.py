@@ -7,6 +7,9 @@ from modules.weight_calculator import WeightCalculator
 from modules.report_generator import ReportGenerator
 from modules.visualizations import Visualizations
 from modules.schema_validator import SchemaValidator
+from modules.audit_trail import AuditTrail
+from modules.dashboard import Dashboard
+from modules.user_guidance import UserGuidance
 import json
 
 # Page configuration
@@ -33,19 +36,49 @@ def main():
     st.title("📊 Survey Data Processing Platform")
     st.markdown("*AI-augmented data cleaning, weighting, and automated report generation for statistical agencies*")
     
-    # Sidebar navigation
-    st.sidebar.title("Navigation")
+    # Show interactive tutorial for new users
+    UserGuidance.show_interactive_tutorial()
+    
+    # Initialize audit trail
+    audit = AuditTrail()
+    
+    # Sidebar navigation with enhanced options
+    st.sidebar.title("🧭 Navigation")
     page = st.sidebar.selectbox(
         "Select Processing Step",
         [
+            "🎯 Analytics Dashboard",
             "📁 Data Upload & Schema",
             "🧹 Data Cleaning",
             "⚖️ Weight Application", 
             "📈 Analysis & Visualization",
             "📄 Report Generation",
+            "🔍 Audit Trail",
             "📋 Processing Log"
         ]
     )
+    
+    # Quick stats in sidebar
+    if st.session_state.get('data') is not None:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("**📊 Quick Stats**")
+        data = st.session_state.data
+        st.sidebar.metric("Records", f"{data.shape[0]:,}")
+        st.sidebar.metric("Columns", data.shape[1])
+        missing_pct = (data.isnull().sum().sum() / (data.shape[0] * data.shape[1]) * 100)
+        st.sidebar.metric("Missing %", f"{missing_pct:.1f}%")
+        
+        # Processing progress
+        st.sidebar.markdown("**🔄 Progress**")
+        progress_items = [
+            ("Upload", st.session_state.get('data') is not None),
+            ("Schema", st.session_state.get('schema') is not None),
+            ("Cleaning", st.session_state.get('cleaned_data') is not None),
+            ("Weighting", st.session_state.get('weighted_results') is not None)
+        ]
+        completed = sum(1 for _, done in progress_items if done)
+        st.sidebar.progress(completed / len(progress_items))
+        st.sidebar.write(f"{completed}/{len(progress_items)} steps completed")
     
     # Help section
     with st.sidebar.expander("ℹ️ Help & Guidance"):
@@ -64,21 +97,36 @@ def main():
         """)
     
     # Route to selected page
-    if page == "📁 Data Upload & Schema":
-        data_upload_page()
+    if page == "🎯 Analytics Dashboard":
+        dashboard = Dashboard()
+        dashboard.display_dashboard()
+    elif page == "📁 Data Upload & Schema":
+        data_upload_page(audit)
     elif page == "🧹 Data Cleaning":
-        data_cleaning_page()
+        data_cleaning_page(audit)
     elif page == "⚖️ Weight Application":
-        weight_application_page()
+        weight_application_page(audit)
     elif page == "📈 Analysis & Visualization":
-        analysis_page()
+        analysis_page(audit)
     elif page == "📄 Report Generation":
-        report_generation_page()
+        report_generation_page(audit)
+    elif page == "🔍 Audit Trail":
+        audit.display_audit_trail()
     elif page == "📋 Processing Log":
         processing_log_page()
 
-def data_upload_page():
+def data_upload_page(audit):
     st.header("📁 Data Upload & Schema Configuration")
+    
+    # Show processing tips
+    UserGuidance.show_processing_tips()
+    
+    # Show data quality alerts if data exists
+    if st.session_state.get('data') is not None:
+        UserGuidance.show_data_quality_alerts(st.session_state.data)
+    
+    # Show smart suggestions
+    UserGuidance.show_smart_suggestions('upload', st.session_state.get('data'))
     
     col1, col2 = st.columns([2, 1])
     
@@ -96,7 +144,16 @@ def data_upload_page():
                 data = loader.load_file(uploaded_file)
                 st.session_state.data = data
                 
+                # Log the upload action
+                audit.log_data_upload(
+                    filename=uploaded_file.name,
+                    file_size=uploaded_file.size,
+                    file_type=uploaded_file.type,
+                    data_shape=data.shape
+                )
+                
                 st.success(f"✅ File loaded successfully! Shape: {data.shape}")
+                st.info(f"📝 Upload logged to audit trail at {pd.Timestamp.now().strftime('%H:%M:%S')}")
                 
                 # Data preview
                 st.subheader("Data Preview")
@@ -134,7 +191,12 @@ def data_upload_page():
                     validator = SchemaValidator()
                     schema = validator.auto_detect_schema(st.session_state.data)
                     st.session_state.schema = schema
+                    
+                    # Log schema detection
+                    audit.log_schema_detection("auto-detected", schema)
+                    
                     st.success("✅ Schema auto-detected!")
+                    st.info("📝 Schema detection logged to audit trail")
                     
             elif schema_method == "Manual Configuration":
                 st.info("Configure column types and survey parameters manually")
@@ -159,12 +221,15 @@ def data_upload_page():
             st.subheader("Current Schema")
             st.json(st.session_state.schema)
 
-def data_cleaning_page():
+def data_cleaning_page(audit):
     st.header("🧹 Data Cleaning & Validation")
     
     if st.session_state.data is None:
         st.warning("⚠️ Please upload data first in the Data Upload page.")
         return
+    
+    # Show smart suggestions for cleaning
+    UserGuidance.show_smart_suggestions('cleaning')
     
     cleaner = DataCleaner()
     
@@ -239,6 +304,14 @@ def data_cleaning_page():
                 cleaned_data, cleaning_report = cleaner.clean_data(st.session_state.data, config)
                 st.session_state.cleaned_data = cleaned_data
                 
+                # Log to audit trail
+                audit.log_data_cleaning(
+                    config=config,
+                    before_shape=st.session_state.data.shape,
+                    after_shape=cleaned_data.shape,
+                    cleaning_report=cleaning_report
+                )
+                
                 # Log the process
                 st.session_state.processing_log.append({
                     'step': 'Data Cleaning',
@@ -248,6 +321,7 @@ def data_cleaning_page():
                 })
                 
                 st.success("✅ Data cleaning completed!")
+                st.info("📝 Cleaning process logged to audit trail")
                 
                 # Display cleaning results
                 st.subheader("Cleaning Results")
@@ -272,7 +346,7 @@ def data_cleaning_page():
             except Exception as e:
                 st.error(f"❌ Error during cleaning: {str(e)}")
 
-def weight_application_page():
+def weight_application_page(audit):
     st.header("⚖️ Weight Application & Statistical Computation")
     
     if st.session_state.cleaned_data is None:
@@ -420,7 +494,7 @@ def weight_application_page():
                 with st.expander("Error Details (for debugging)"):
                     st.code(error_details)
 
-def analysis_page():
+def analysis_page(audit):
     st.header("📈 Analysis & Visualization")
     
     if st.session_state.weighted_results is None:
@@ -484,7 +558,7 @@ def analysis_page():
                 mime="text/csv"
             )
 
-def report_generation_page():
+def report_generation_page(audit):
     st.header("📄 Report Generation")
     
     if st.session_state.weighted_results is None:
