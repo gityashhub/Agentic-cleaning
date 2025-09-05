@@ -362,15 +362,29 @@ Always be conversational, specific with numbers, and helpful."""
             return 'upload'
     
     def _init_groq_client(self):
-        """Initialize Groq client with silent error handling."""
+        """Initialize Groq client with better error handling."""
         try:
             api_key = os.getenv('GROQ_API_KEY')
-            if api_key:
-                self.client = Groq(api_key=api_key)
+            if api_key and api_key.strip():
+                from groq import Groq
+                self.client = Groq(api_key=api_key.strip())
+                # Test the connection with a simple call
+                test_response = self.client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    max_tokens=10,
+                    timeout=5
+                )
+                if test_response:
+                    print("✅ GROQ client initialized successfully")
+                else:
+                    self.client = None
             else:
-                self.client = None  # Will use fallback responses
-        except Exception:
-            self.client = None  # Silent fallback
+                print("❌ No GROQ_API_KEY found")
+                self.client = None
+        except Exception as e:
+            print(f"❌ GROQ client initialization failed: {str(e)}")
+            self.client = None
 
     def _get_step_context(self, step=None):
         """Get comprehensive context specific to a processing step with real data."""
@@ -605,18 +619,25 @@ Be conversational, specific with numbers, and seamlessly reference cross-step in
                 {"role": "user", "content": f"Context: {context_str}\n\nChat History: {chat_history}\n\nUser Question: {user_message}"}
             ]
             
-            # Call Groq API
+            # Call Groq API with better error handling
             response = self.client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=messages,
-                max_tokens=500,  # Increased for more detailed responses
-                temperature=0.4,  # Lower for more consistent responses
-                timeout=10
+                max_tokens=500,
+                temperature=0.4,
+                timeout=15  # Increased timeout
             )
             
-            return response.choices[0].message.content.strip()
+            if response and response.choices and len(response.choices) > 0:
+                ai_response = response.choices[0].message.content.strip()
+                print(f"✅ GROQ AI response received: {ai_response[:100]}...")
+                return ai_response
+            else:
+                print("❌ Empty response from GROQ API")
+                return self._get_contextual_fallback(user_message, language, current_step)
             
         except Exception as e:
+            print(f"❌ GROQ API call failed: {str(e)}")
             return self._get_contextual_fallback(user_message, language, current_step)
 
     def display_chatbot(self):
