@@ -10,6 +10,7 @@ from modules.schema_validator import SchemaValidator
 from modules.audit_trail import AuditTrail
 from modules.dashboard import Dashboard
 from modules.user_guidance import UserGuidance
+from modules.process_intelligence_chatbot import ProcessIntelligenceChatbot
 import json
 
 # Page configuration
@@ -19,6 +20,33 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Add custom CSS for better UI
+st.markdown("""
+<style>
+    .stAlert > div {
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    .metric-container {
+        background-color: #f0f2f6;
+        border-radius: 10px;
+        padding: 10px;
+        margin: 5px 0;
+    }
+    .chat-container {
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+        background-color: #fafafa;
+    }
+    .stSelectbox > label {
+        color: #1e88e5;
+        font-weight: 600;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Initialize session state
 if 'data' not in st.session_state:
@@ -114,6 +142,11 @@ def main():
         audit.display_audit_trail()
     elif page == "📋 Processing Log":
         processing_log_page()
+    
+    # Add the Process Intelligence Chatbot to every page
+    if st.session_state.get('data') is not None or st.session_state.get('processing_log'):
+        chatbot = ProcessIntelligenceChatbot()
+        chatbot.display_chatbot()
 
 def data_upload_page(audit):
     st.header("📁 Data Upload & Schema Configuration")
@@ -157,19 +190,30 @@ def data_upload_page(audit):
                 
                 # Data preview
                 st.subheader("Data Preview")
-                st.dataframe(data.head(10), width="stretch")
+                if data is not None and not data.empty:
+                    st.dataframe(data.head(10), width="stretch")
+                else:
+                    st.warning("No data to preview")
                 
                 # Basic statistics
                 st.subheader("Basic Statistics")
                 col_stats1, col_stats2 = st.columns(2)
                 
                 with col_stats1:
-                    st.metric("Rows", f"{data.shape[0]:,}")
-                    st.metric("Numeric Columns", len(data.select_dtypes(include=[np.number]).columns))
+                    if data is not None:
+                        st.metric("Rows", f"{data.shape[0]:,}")
+                        st.metric("Numeric Columns", len(data.select_dtypes(include=[np.number]).columns))
+                    else:
+                        st.metric("Rows", "0")
+                        st.metric("Numeric Columns", "0")
                 
                 with col_stats2:
-                    st.metric("Columns", data.shape[1])
-                    st.metric("Missing Values", f"{data.isnull().sum().sum():,}")
+                    if data is not None:
+                        st.metric("Columns", data.shape[1])
+                        st.metric("Missing Values", f"{data.isnull().sum().sum():,}")
+                    else:
+                        st.metric("Columns", "0")
+                        st.metric("Missing Values", "0")
                 
             except Exception as e:
                 st.error(f"❌ Error loading file: {str(e)}")
@@ -378,24 +422,27 @@ def weight_application_page(audit):
             # Convert to numeric if it's not already
             try:
                 weights = pd.to_numeric(weights, errors='coerce')
-            except:
-                st.error("❌ Selected weight column contains non-numeric values")
-                return
-            
-            if weights.isnull().all():
-                st.error("❌ Weight column contains no valid numeric values")
+                if weights.isnull().all():
+                    st.error("❌ Weight column contains no valid numeric values")
+                    return
+            except Exception as e:
+                st.error(f"❌ Error processing weight column: {str(e)}")
                 return
             
             st.markdown("**Weight Diagnostics**")
             col_w1, col_w2 = st.columns(2)
             
-            with col_w1:
-                st.metric("Min Weight", f"{weights.min():.3f}")
-                st.metric("Mean Weight", f"{weights.mean():.3f}")
-            
-            with col_w2:
-                st.metric("Max Weight", f"{weights.max():.3f}")
-                st.metric("Std Weight", f"{weights.std():.3f}")
+            try:
+                with col_w1:
+                    st.metric("Min Weight", f"{float(weights.min()):.3f}")
+                    st.metric("Mean Weight", f"{float(weights.mean()):.3f}")
+                
+                with col_w2:
+                    st.metric("Max Weight", f"{float(weights.max()):.3f}")
+                    st.metric("Std Weight", f"{float(weights.std()):.3f}")
+            except Exception as e:
+                st.warning(f"Could not calculate weight statistics: {str(e)}")
+                st.info("Weight diagnostics temporarily unavailable")
             
             # Weight adjustments
             st.markdown("**Weight Adjustments**")

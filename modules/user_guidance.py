@@ -54,7 +54,8 @@ class UserGuidance:
         for col in data.columns[:5]:  # Check first 5 columns
             if data[col].dtype == 'object':
                 try:
-                    numeric_count = pd.to_numeric(data[col], errors='coerce').notna().sum()
+                    numeric_converted = pd.to_numeric(data[col], errors='coerce')
+                    numeric_count = numeric_converted.count()  # Count non-null values
                     if numeric_count > len(data) * 0.8:
                         alerts.append(("💡 Type Conversion Suggestion", f"Column '{col}' appears to be numeric but stored as text."))
                 except:

@@ -91,9 +91,10 @@ class Dashboard:
         with col1:
             st.subheader("📊 Data Type Distribution")
             dtype_counts = data.dtypes.value_counts()
-            fig = px.pie(values=dtype_counts.values, names=dtype_counts.index, 
+            dtype_dict = {str(dtype): count for dtype, count in dtype_counts.items()}
+            fig = px.pie(values=list(dtype_dict.values()), names=list(dtype_dict.keys()), 
                         title="Column Data Types")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         
         with col2:
             st.subheader("📏 Column Statistics")
@@ -122,16 +123,19 @@ class Dashboard:
             st.subheader("🎯 Missing Data Pattern")
             missing_data = data.isnull()
             
-            # Create heatmap of missing data
+            # Create heatmap of missing data - limit size for performance
+            sample_size = min(1000, len(missing_data))
+            missing_sample = missing_data.head(sample_size)
+            
             fig = go.Figure(data=go.Heatmap(
-                z=missing_data.values,
-                x=missing_data.columns,
-                y=list(range(len(missing_data))),
+                z=missing_sample.values.astype(int),
+                x=list(missing_sample.columns),
+                y=list(range(len(missing_sample))),
                 colorscale='Reds',
                 showscale=True
             ))
             fig.update_layout(title="Missing Data Heatmap (Red = Missing)", height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     
     def _display_quality_metrics(self):
         """Display data quality metrics and alerts."""

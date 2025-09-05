@@ -86,9 +86,14 @@ class AuditTrail:
         if not st.session_state.audit_log:
             return pd.DataFrame()
         
-        df = pd.DataFrame(st.session_state.audit_log)
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        return df
+        try:
+            df = pd.DataFrame(st.session_state.audit_log)
+            if not df.empty and 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+            return df
+        except Exception as e:
+            # Return empty DataFrame with proper structure on error
+            return pd.DataFrame(columns=['timestamp', 'action_type', 'details', 'entry_id', 'session_id'])
     
     def get_session_summary(self):
         """Get summary statistics for the current session."""
@@ -170,13 +175,22 @@ class AuditTrail:
         # Display filtered log
         df = self.get_audit_log_df()
         
-        if action_filter:
-            df = df[df['action_type'].isin(action_filter)]
-        
-        # Format for display
-        display_df = df[['timestamp', 'action_type', 'details']].copy()
-        display_df['timestamp'] = display_df['timestamp'].dt.strftime('%H:%M:%S')
-        display_df.columns = ['Time', 'Action Type', 'Description']
+        if not df.empty:
+            if action_filter:
+                df = df[df['action_type'].isin(action_filter)]
+            
+            # Format for display
+            if not df.empty and all(col in df.columns for col in ['timestamp', 'action_type', 'details']):
+                display_df = df[['timestamp', 'action_type', 'details']].copy()
+                if 'timestamp' in display_df.columns and hasattr(display_df['timestamp'].iloc[0], 'strftime'):
+                    display_df['timestamp'] = display_df['timestamp'].dt.strftime('%H:%M:%S')
+                else:
+                    display_df['timestamp'] = display_df['timestamp'].astype(str)
+                display_df.columns = ['Time', 'Action Type', 'Description']
+            else:
+                display_df = pd.DataFrame(columns=['Time', 'Action Type', 'Description'])
+        else:
+            display_df = pd.DataFrame(columns=['Time', 'Action Type', 'Description'])
         
         st.dataframe(display_df, use_container_width=True)
         

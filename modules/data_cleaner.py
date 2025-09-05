@@ -161,7 +161,11 @@ class DataCleaner:
         
         for col in numeric_cols:
             if df[col].notna().sum() > 0:
-                z_scores = np.abs(stats.zscore(df[col].dropna()))
+                try:
+                    z_scores = np.abs(stats.zscore(df[col].dropna(), nan_policy='omit'))
+                except Exception:
+                    # Skip column if zscore calculation fails
+                    continue
                 outliers = z_scores > threshold
                 outliers_count += outliers.sum()
                 
