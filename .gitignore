@@ -1,0 +1,27 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.env/
+*.env
+
+# Streamlit local config (server settings not needed in cloud)
+.streamlit/
+
+# VS Code settings
+.vscode/
+
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Data (optional: remove if you want to keep small demo data)
+test_data/
+*.csv
+*.xlsx
+*.parquet
