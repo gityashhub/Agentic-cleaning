@@ -236,59 +236,190 @@ class ProcessIntelligenceChatbot:
         return history_str
     
     def _build_comprehensive_context(self, context, user_message):
-        """Build comprehensive context string with real data."""
+        """Build detailed context string with all available real data and processing configurations for AI prompts."""
         context_parts = []
         
         # Current step and status
         context_parts.append(f"CURRENT STEP: {context['step'].upper()}")
-        context_parts.append(f"STATUS: {context.get('step_status', 'pending').upper()}")
+        context_parts.append(f"STEP STATUS: {context.get('step_status', 'pending').upper()}")
         
         # Real data information
-        if context.get('data_info'):
-            data_info = context['data_info']
-            context_parts.append("\nREAL DATA METRICS:")
-            context_parts.append(f"- Records: {data_info.get('total_rows', 0):,}")
-            context_parts.append(f"- Columns: {data_info.get('total_columns', 0)}")
-            context_parts.append(f"- Missing values: {data_info.get('missing_values', 0):,} ({data_info.get('missing_percentage', 0):.2f}%)")
-            context_parts.append(f"- Numeric columns: {data_info.get('numeric_columns', 0)}")
-            context_parts.append(f"- Categorical columns: {data_info.get('categorical_columns', 0)}")
+        data_info = context.get('data_info', {})
+        if data_info:
+            context_parts.append(f"\nREAL DATA METRICS:")
+            context_parts.append(f"- Dataset: {data_info.get('total_rows', 0):,} rows × {data_info.get('total_columns', 0)} columns")
+            context_parts.append(f"- Data quality: {data_info.get('missing_values', 0):,} missing values ({data_info.get('missing_percentage', 0):.2f}%)")
+            context_parts.append(f"- Data types: {data_info.get('numeric_columns', 0)} numeric, {data_info.get('categorical_columns', 0)} categorical columns")
+            if data_info.get('duplicates', 0) > 0:
+                context_parts.append(f"- Duplicates found: {data_info.get('duplicates', 0):,}")
         
-        # Processing results (with safe handling)
-        if context.get('processing_results') and isinstance(context.get('processing_results'), dict):
-            for step_name, results in context['processing_results'].items():
-                context_parts.append(f"\n{step_name.upper()} RESULTS:")
-                if isinstance(results, dict):
-                    for key, value in results.items():
-                        if isinstance(value, (int, float)):
-                            context_parts.append(f"- {key}: {value:,}" if isinstance(value, int) else f"- {key}: {value:.2f}")
-                        elif isinstance(value, list):
-                            context_parts.append(f"- {key}: {', '.join(map(str, value[:3]))}")  # Show first 3 items
-                        else:
-                            context_parts.append(f"- {key}: {value}")
-                else:
-                    context_parts.append(f"- Results: {results}")
+        # Real processing configurations used
+        processing_configs = context.get('processing_configurations', {})
+        if processing_configs:
+            context_parts.append(f"\nACTUAL PROCESSING METHODS USED:")
+            
+            # Upload configuration
+            if 'upload' in processing_configs:
+                upload_config = processing_configs['upload']
+                context_parts.append(f"UPLOAD STEP:")
+                context_parts.append(f"- Data completeness: {upload_config.get('initial_quality_check', {}).get('data_completeness', 'Unknown')}%")
+                context_parts.append(f"- Columns detected: {len(upload_config.get('columns_detected', []))}")
+            
+            # Cleaning configuration with actual methods
+            if 'cleaning' in processing_configs:
+                cleaning_config = processing_configs['cleaning']
+                context_parts.append(f"CLEANING STEP METHODS:")
+                context_parts.append(f"- Missing value method: {cleaning_config.get('imputation_method', 'None')}")
+                if cleaning_config.get('outlier_detection'):
+                    context_parts.append(f"- Outlier detection: {', '.join(cleaning_config['outlier_detection'])}")
+                if cleaning_config.get('validation_rules'):
+                    context_parts.append(f"- Validation rules: {', '.join(cleaning_config['validation_rules'])}")
+                if cleaning_config.get('parameters'):
+                    params = cleaning_config['parameters']
+                    if params.get('knn_neighbors') and cleaning_config.get('imputation_method') == 'KNN':
+                        context_parts.append(f"- KNN neighbors: {params['knn_neighbors']}")
+                    if params.get('z_threshold') and 'Z-score' in cleaning_config.get('outlier_detection', []):
+                        context_parts.append(f"- Z-score threshold: {params['z_threshold']}")
+            
+            # Weighting configuration with actual methods
+            if 'weighting' in processing_configs:
+                weighting_config = processing_configs['weighting']
+                context_parts.append(f"WEIGHTING STEP METHODS:")
+                context_parts.append(f"- Weight column: {weighting_config.get('weight_column', 'None')}")
+                if weighting_config.get('analysis_variables'):
+                    context_parts.append(f"- Analysis variables: {', '.join(weighting_config['analysis_variables'])}")
+                if weighting_config.get('statistical_methods'):
+                    context_parts.append(f"- Statistical methods: {', '.join(weighting_config['statistical_methods'])}")
+                context_parts.append(f"- Confidence level: {weighting_config.get('confidence_level', 0.95)*100}%")
+        
+        # Processing results with actual outcomes
+        processing_results = context.get('processing_results', {})
+        if processing_results:
+            context_parts.append(f"\nACTUAL PROCESSING OUTCOMES:")
+            
+            # Cleaning results
+            if 'cleaning' in processing_results:
+                cleaning = processing_results['cleaning']
+                context_parts.append(f"CLEANING RESULTS:")
+                context_parts.append(f"- Rows processed: {cleaning.get('rows_after_cleaning', 0):,} remaining")
+                if cleaning.get('rows_removed', 0) > 0:
+                    context_parts.append(f"- Rows removed: {cleaning['rows_removed']:,} ({cleaning.get('removal_percentage', 0):.1f}%)")
+                context_parts.append(f"- Missing values fixed: {cleaning.get('missing_values_fixed', 0):,}")
+                context_parts.append(f"- Quality improvement: {cleaning.get('quality_improvement', 'unknown')}")
+            
+            # Weighting results
+            if 'weighting' in processing_results:
+                context_parts.append(f"WEIGHTING RESULTS:")
+                context_parts.append(f"- Statistical analysis completed")
+                context_parts.append(f"- Survey weights applied successfully")
+            
+            # Recent processing activity
+            if 'recent_activity' in processing_results:
+                context_parts.append(f"RECENT ACTIVITY:")
+                for activity in processing_results['recent_activity'][-3:]:  # Last 3 activities
+                    context_parts.append(f"- {activity}")
+        
+        # Cross-step memory context
+        if hasattr(st.session_state, 'cross_step_memory') and st.session_state.cross_step_memory:
+            context_parts.append(f"\nCROSS-STEP MEMORY:")
+            for step_name, memory in st.session_state.cross_step_memory.items():
+                if memory.get('completed') and step_name != context['step']:
+                    context_parts.append(f"- {step_name.upper()}: {memory.get('process_details', {})}")
         
         return "\n".join(context_parts)
     
     def _create_enhanced_system_prompt(self, language, current_step, context):
-        """Create enhanced system prompt that prioritizes real data."""
-        prompt = f"""You are an intelligent Survey Data Processing Assistant for step: {current_step.upper()}.
+        """Create process-aware system prompt that includes real methodology details."""
+        # Extract processing configurations for current and previous steps
+        processing_configs = context.get('processing_configurations', {})
+        processing_results = context.get('processing_results', {})
+        data_info = context.get('data_info', {})
+        
+        # Build step-specific methodology context
+        methodology_context = []
+        
+        # Upload methodology details
+        if 'upload' in processing_configs:
+            upload_config = processing_configs['upload']
+            methodology_context.append(f"UPLOAD COMPLETED: Processed {len(upload_config.get('columns_detected', []))} columns with {upload_config.get('initial_quality_check', {}).get('data_completeness', 'unknown')}% data completeness")
+        
+        # Cleaning methodology details
+        if 'cleaning' in processing_configs:
+            cleaning_config = processing_configs['cleaning']
+            cleaning_methods = []
+            if cleaning_config.get('imputation_method') and cleaning_config['imputation_method'] != 'None':
+                cleaning_methods.append(f"{cleaning_config['imputation_method']} imputation")
+                if cleaning_config.get('parameters', {}).get('knn_neighbors') and cleaning_config['imputation_method'] == 'KNN':
+                    cleaning_methods.append(f"(k={cleaning_config['parameters']['knn_neighbors']})")
+            if cleaning_config.get('outlier_detection'):
+                cleaning_methods.append(f"{', '.join(cleaning_config['outlier_detection'])} outlier detection")
+                if 'Z-score' in cleaning_config['outlier_detection'] and cleaning_config.get('parameters', {}).get('z_threshold'):
+                    cleaning_methods.append(f"(z-threshold={cleaning_config['parameters']['z_threshold']})")
+            if cleaning_config.get('validation_rules'):
+                cleaning_methods.append(f"validation rules: {', '.join(cleaning_config['validation_rules'])}")
+                
+            if cleaning_methods:
+                methodology_context.append(f"CLEANING COMPLETED: Used {', '.join(cleaning_methods)}")
+                
+            # Add cleaning results
+            if 'cleaning' in processing_results:
+                cleaning_result = processing_results['cleaning']
+                methodology_context.append(f"CLEANING OUTCOMES: {cleaning_result.get('rows_after_cleaning', 0)} rows retained, {cleaning_result.get('missing_values_fixed', 0)} missing values fixed")
+        
+        # Weighting methodology details  
+        if 'weighting' in processing_configs:
+            weighting_config = processing_configs['weighting']
+            weighting_methods = []
+            if weighting_config.get('weight_column') and weighting_config['weight_column'] != 'None':
+                weighting_methods.append(f"weight column: {weighting_config['weight_column']}")
+            if weighting_config.get('analysis_variables'):
+                weighting_methods.append(f"analyzed {len(weighting_config['analysis_variables'])} variables")
+            if weighting_config.get('statistical_methods'):
+                weighting_methods.append(f"methods: {', '.join(weighting_config['statistical_methods'])}")
+            weighting_methods.append(f"{weighting_config.get('confidence_level', 0.95)*100}% confidence level")
+            
+            if weighting_methods:
+                methodology_context.append(f"WEIGHTING COMPLETED: Applied {', '.join(weighting_methods)}")
+        
+        # Current step context
+        current_step_context = {
+            'upload': f"You are helping with DATA UPLOAD. Dataset has {data_info.get('total_rows', 0):,} rows and {data_info.get('total_columns', 0)} columns.",
+            'cleaning': f"You are helping with DATA CLEANING. Current data quality: {data_info.get('missing_percentage', 0):.1f}% missing values.",
+            'weighting': f"You are helping with WEIGHT APPLICATION AND ANALYSIS. Ready to apply survey weights to cleaned data.",
+            'analysis': f"You are helping with DATA ANALYSIS. All processing steps completed, ready for statistical analysis."
+        }.get(current_step, f"You are helping with {current_step.upper()} processing.")
+        
+        # Build comprehensive system prompt
+        prompt = f"""You are an intelligent Survey Data Processing Assistant with COMPLETE KNOWLEDGE of the actual processing methodology used.
 
-CRITICAL INSTRUCTIONS:
-1. ALWAYS use the REAL DATA METRICS provided in the context - never give generic responses
-2. When users ask about numbers (records, missing values, columns), provide the EXACT values from the context
-3. Be specific, helpful, and reference actual data whenever possible
-4. If you don't have the exact data requested, say so clearly and suggest alternatives
-5. Adapt your responses based on chat history - avoid repetition
-6. If users complain about repetitive answers, acknowledge and provide more specific help
+{current_step_context}
 
-Your expertise for {current_step}:
-- Upload: Help with data uploading, file formats, initial data review
-- Cleaning: Assist with missing values, outliers, data quality issues
-- Weighting: Guide survey weight application and statistical calculations  
-- Analysis: Help interpret results and create visualizations
+ACTUAL PROCESSING METHODOLOGY COMPLETED:
+{chr(10).join(methodology_context) if methodology_context else "No processing steps completed yet."}
 
-Always be conversational, specific with numbers, and helpful."""
+REAL DATA CONTEXT:
+- Dataset: {data_info.get('total_rows', 0):,} rows × {data_info.get('total_columns', 0)} columns
+- Data quality: {data_info.get('missing_values', 0):,} missing values ({data_info.get('missing_percentage', 0):.2f}%)
+- Data types: {data_info.get('numeric_columns', 0)} numeric, {data_info.get('categorical_columns', 0)} categorical
+- Current step status: {context.get('step_status', 'pending').upper()}
+
+KEY INSTRUCTIONS:
+1. **PROCESS AWARENESS**: You know exactly what processing methods were used (imputation techniques, outlier detection methods, parameters, etc.)
+2. **METHODOLOGY SPECIFIC**: Reference the actual methods used, not generic ones (e.g., "your KNN imputation with k=5" not just "missing value handling")
+3. **PARAMETER AWARE**: Include specific parameters when discussing methods (thresholds, neighbor counts, confidence levels)
+4. **OUTCOME FOCUSED**: Reference actual processing outcomes and results achieved
+5. **STEP BRIDGING**: Connect information between completed steps using real methodology details
+6. **DATA SPECIFIC**: Use exact numbers from this dataset, not examples
+
+RESPONSE GUIDELINES:
+- Always reference the actual methods and parameters used in processing
+- Be specific about what was accomplished in each step
+- Provide insights based on the real methodology applied to this data
+- Connect processing choices to outcomes when explaining results
+- Answer questions about methodology with specific implementation details
+
+LANGUAGE: Respond in {language}.
+TONE: Expert, specific, methodology-aware, helpful."""
         
         return prompt
     
@@ -415,7 +546,7 @@ Always be conversational, specific with numbers, and helpful."""
             self.client = None
 
     def _get_step_context(self, step=None):
-        """Get comprehensive context specific to a processing step with real data."""
+        """Get comprehensive context specific to a processing step with real configurations and processing details."""
         target_step = step or self.current_step
         
         # Don't cache context as data changes frequently
@@ -425,17 +556,19 @@ Always be conversational, specific with numbers, and helpful."""
             'step_status': 'pending',
             'detailed_stats': {},
             'processing_results': {},
+            'processing_configurations': {},
             'actionable_insights': []
         }
         
         try:
-            # Comprehensive data information extraction
+            # === UPLOAD STEP CONTEXT ===
             if st.session_state.get('data') is not None:
                 data = st.session_state.data
                 if data is not None and hasattr(data, 'shape'):
                     total_cells = data.shape[0] * data.shape[1]
                     missing_count = data.isnull().sum().sum()
                     
+                    # Basic data information
                     context['data_info'] = {
                         'total_rows': int(data.shape[0]),
                         'total_columns': int(data.shape[1]),
@@ -446,18 +579,42 @@ Always be conversational, specific with numbers, and helpful."""
                         'duplicates': int(data.duplicated().sum()) if hasattr(data, 'duplicated') else 0
                     }
                     
-                    # Detailed column-wise missing data analysis
+                    # Detailed column analysis
                     missing_by_column = data.isnull().sum().sort_values(ascending=False)
                     context['detailed_stats'] = {
                         'columns_with_missing': list(missing_by_column[missing_by_column > 0].head(5).to_dict().items()),
                         'complete_columns': int((missing_by_column == 0).sum()),
-                        'column_names': list(data.columns[:10]),  # First 10 columns
+                        'column_names': list(data.columns[:10]),
                         'data_types': data.dtypes.value_counts().to_dict()
                     }
                     
-                    context['step_status'] = 'completed' if target_step == 'upload' else 'available'
+                    # Upload step configuration (file type, encoding, etc.)
+                    context['processing_configurations']['upload'] = {
+                        'file_type': 'detected_from_upload',
+                        'columns_detected': list(data.columns),
+                        'dtypes_inferred': data.dtypes.to_dict(),
+                        'initial_quality_check': {
+                            'has_missing': missing_count > 0,
+                            'has_duplicates': context['data_info']['duplicates'] > 0,
+                            'data_completeness': round((1 - context['data_info']['missing_percentage']/100) * 100, 1)
+                        }
+                    }
+                    
+                    if target_step == 'upload':
+                        context['step_status'] = 'completed'
             
-            # Comprehensive cleaning results
+            # === SCHEMA STEP CONTEXT ===
+            if st.session_state.get('schema') is not None:
+                schema = st.session_state.schema
+                context['processing_configurations']['schema'] = {
+                    'schema_defined': True,
+                    'configured_columns': schema if isinstance(schema, dict) else {},
+                    'validation_rules_applied': bool(schema)
+                }
+                if target_step == 'schema':
+                    context['step_status'] = 'completed'
+
+            # === CLEANING STEP CONTEXT ===
             if st.session_state.get('cleaned_data') is not None:
                 cleaned = st.session_state.cleaned_data
                 if cleaned is not None and hasattr(cleaned, 'shape'):
@@ -466,6 +623,7 @@ Always be conversational, specific with numbers, and helpful."""
                     original_missing = context['data_info'].get('missing_values', 0)
                     remaining_missing = int(cleaned.isnull().sum().sum())
                     
+                    # Enhanced cleaning results with actual process details
                     context['processing_results']['cleaning'] = {
                         'rows_after_cleaning': int(cleaned.shape[0]),
                         'rows_removed': int(rows_removed),
@@ -475,46 +633,188 @@ Always be conversational, specific with numbers, and helpful."""
                         'missing_values_fixed': original_missing - remaining_missing,
                         'quality_improvement': 'significant' if rows_removed > 0 or (original_missing - remaining_missing) > 0 else 'minimal'
                     }
+                    
+                    # Extract real cleaning configuration from processing log or session state
+                    context['processing_configurations']['cleaning'] = self._extract_cleaning_configuration()
+                    
                     if target_step == 'cleaning':
                         context['step_status'] = 'completed'
 
-            # Comprehensive weighting and analysis results  
+            # === WEIGHTING STEP CONTEXT ===
             if st.session_state.get('weighted_results') is not None:
                 results = st.session_state.weighted_results
+                
+                # Enhanced weighting results with actual configuration
                 context['processing_results']['weighting'] = {
                     'weights_applied': True,
                     'analysis_completed': True,
                     'statistical_results': 'available',
                     'result_type': type(results).__name__
                 }
+                
+                # Extract real weighting configuration
+                context['processing_configurations']['weighting'] = self._extract_weighting_configuration(results)
+                
                 if target_step in ['weighting', 'analysis']:
                     context['step_status'] = 'completed'
             
-            # Processing log insights
+            # === PROCESSING LOG ANALYSIS ===
             if st.session_state.get('processing_log'):
-                recent_logs = st.session_state.processing_log[-3:]  # Last 3 log entries
-                context['processing_results']['recent_activity'] = [
-                    f"{log.get('action', 'Unknown')}: {log.get('details', 'No details')}"
-                    for log in recent_logs
-                ]
-            
-            # Processing log with step awareness
-            if st.session_state.get('processing_log'):
+                recent_logs = st.session_state.processing_log[-5:]  # Last 5 log entries
+                context['processing_results']['recent_activity'] = []
+                
+                for log in recent_logs:
+                    if isinstance(log, dict):
+                        activity = f"{log.get('action', 'Unknown')}: {log.get('details', 'No details')}"
+                        context['processing_results']['recent_activity'].append(activity)
+                
+                # Step-specific processing history
                 context['previous_steps'] = [
-                    entry.get('step', 'Unknown')
-                    for entry in st.session_state.processing_log
+                    entry.get('step', 'Unknown') 
+                    for entry in st.session_state.processing_log 
+                    if isinstance(entry, dict)
                 ]
             
-            # Build step summary for cross-step memory
-            self._build_step_summary(target_step, context)
+            # Build enhanced step summary with real process details
+            self._build_enhanced_step_summary(target_step, context)
                 
         except Exception as e:
-            # Graceful fallback with error details
+            # Graceful fallback with detailed error info
             context['error'] = f"Context extraction error: {str(e)}"
             context['fallback_mode'] = True
+            print(f"Context extraction error for step {target_step}: {str(e)}")
             
-        # Don't cache to ensure fresh data
         return context
+    
+    def _extract_cleaning_configuration(self):
+        """Extract actual cleaning configuration from session state or processing log."""
+        cleaning_config = {
+            'methods_used': [],
+            'imputation_method': 'None',
+            'outlier_detection': [],
+            'validation_rules': [],
+            'parameters': {}
+        }
+        
+        try:
+            # Try to find cleaning configuration in processing log
+            if st.session_state.get('processing_log'):
+                for log_entry in reversed(st.session_state.processing_log):
+                    if isinstance(log_entry, dict) and log_entry.get('step') == 'cleaning':
+                        config = log_entry.get('config', {})
+                        if config:
+                            cleaning_config['imputation_method'] = config.get('missing_method', 'None')
+                            cleaning_config['outlier_detection'] = config.get('outlier_methods', [])
+                            cleaning_config['parameters'] = {
+                                'knn_neighbors': config.get('knn_neighbors', 5),
+                                'z_threshold': config.get('z_threshold', 3.0),
+                                'winsor_limits': config.get('winsor_limits', 0.1)
+                            }
+                            if config.get('enable_consistency'):
+                                cleaning_config['validation_rules'].append('Consistency checks')
+                            if config.get('enable_skip_patterns'):
+                                cleaning_config['validation_rules'].append('Skip pattern validation')
+                            if config.get('custom_rules'):
+                                cleaning_config['validation_rules'].extend(config['custom_rules'])
+                            break
+            
+            # Try to extract from cleaning report if available
+            if hasattr(st.session_state, 'cleaning_report') and st.session_state.cleaning_report:
+                report = st.session_state.cleaning_report
+                cleaning_config['methods_used'] = report.get('steps_performed', [])
+                
+        except Exception as e:
+            print(f"Error extracting cleaning configuration: {str(e)}")
+            cleaning_config['extraction_error'] = str(e)
+        
+        return cleaning_config
+    
+    def _extract_weighting_configuration(self, results):
+        """Extract actual weighting configuration from results and session state."""
+        weighting_config = {
+            'weight_column': 'None',
+            'analysis_variables': [],
+            'stratification_variables': [],
+            'confidence_level': 0.95,
+            'weight_method': 'Equal weights',
+            'statistical_methods': []
+        }
+        
+        try:
+            # Try to find weighting configuration in processing log
+            if st.session_state.get('processing_log'):
+                for log_entry in reversed(st.session_state.processing_log):
+                    if isinstance(log_entry, dict) and log_entry.get('step') in ['weighting', 'analysis']:
+                        config = log_entry.get('config', {})
+                        if config:
+                            weighting_config['weight_column'] = config.get('weight_column', 'None')
+                            weighting_config['analysis_variables'] = config.get('analysis_vars', [])
+                            weighting_config['stratification_variables'] = config.get('strat_vars', [])
+                            weighting_config['confidence_level'] = config.get('confidence_level', 0.95)
+                            break
+            
+            # Extract statistical methods used from results structure
+            if isinstance(results, dict):
+                if 'summary_stats' in results:
+                    weighting_config['statistical_methods'].append('Descriptive statistics')
+                if 'margins_of_error' in results:
+                    weighting_config['statistical_methods'].append('Confidence intervals')
+                if 'stratified_results' in results:
+                    weighting_config['statistical_methods'].append('Stratified analysis')
+                if 'weight_diagnostics' in results:
+                    weighting_config['statistical_methods'].append('Weight diagnostics')
+                    
+        except Exception as e:
+            print(f"Error extracting weighting configuration: {str(e)}")
+            weighting_config['extraction_error'] = str(e)
+        
+        return weighting_config
+    
+    def _build_enhanced_step_summary(self, step, context):
+        """Build enhanced summary with real process details for cross-step memory."""
+        summary = {
+            'step': step, 
+            'completed': context.get('step_status') == 'completed',
+            'process_details': {},
+            'configurations': context.get('processing_configurations', {}).get(step, {}),
+            'results': context.get('processing_results', {}).get(step, {})
+        }
+        
+        # Step-specific process summaries
+        if step == 'upload' and context.get('data_info'):
+            data_info = context['data_info']
+            summary['process_details'] = {
+                'data_loaded': f"{data_info['total_rows']} rows × {data_info['total_columns']} columns",
+                'data_quality': f"{data_info['missing_percentage']:.1f}% missing values",
+                'data_types': f"{data_info['numeric_columns']} numeric, {data_info['categorical_columns']} categorical"
+            }
+            
+        elif step == 'cleaning' and context.get('processing_results', {}).get('cleaning'):
+            cleaning = context['processing_results']['cleaning']
+            cleaning_config = context.get('processing_configurations', {}).get('cleaning', {})
+            summary['process_details'] = {
+                'imputation_method': cleaning_config.get('imputation_method', 'Unknown'),
+                'outlier_methods': ', '.join(cleaning_config.get('outlier_detection', [])),
+                'rows_processed': f"{cleaning['rows_after_cleaning']} remaining ({cleaning['rows_removed']} removed)",
+                'missing_fixed': cleaning['missing_values_fixed'],
+                'quality_improvement': cleaning['quality_improvement']
+            }
+            
+        elif step == 'weighting' and context.get('processing_results', {}).get('weighting'):
+            weighting_config = context.get('processing_configurations', {}).get('weighting', {})
+            summary['process_details'] = {
+                'weight_column': weighting_config.get('weight_column', 'None'),
+                'analysis_vars': ', '.join(weighting_config.get('analysis_variables', [])),
+                'statistical_methods': ', '.join(weighting_config.get('statistical_methods', [])),
+                'confidence_level': f"{weighting_config.get('confidence_level', 0.95)*100}%"
+            }
+        
+        # Store in cross-step memory
+        if not hasattr(st.session_state, 'cross_step_memory'):
+            st.session_state.cross_step_memory = {}
+        st.session_state.cross_step_memory[step] = summary
+        
+        return summary
     
     def _build_step_summary(self, step, context):
         """Build compact summary for cross-step memory."""
