@@ -283,8 +283,66 @@ Always acknowledge the current processing step and provide contextual help. Be c
             return self._get_fallback_response(user_message, language, current_step)
 
     def display_chatbot(self):
-        """Display the Step-Aware Process Intelligence Chatbot interface."""
-        st.markdown("---")
+        """Display the ChatGPT-style Process Intelligence Chatbot interface."""
+        # Add ChatGPT-style CSS
+        st.markdown("""
+        <style>
+        .chat-container {
+            background-color: #f7f7f8;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 10px 0;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .user-message {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 18px;
+            margin: 8px 0;
+            max-width: 80%;
+            margin-left: auto;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .assistant-message {
+            background: white;
+            color: #333;
+            padding: 12px 16px;
+            border-radius: 18px;
+            margin: 8px 0;
+            max-width: 80%;
+            border: 1px solid #e1e5e9;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .chat-header {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px 10px 0 0;
+            margin-bottom: 0;
+        }
+        
+        .timestamp {
+            font-size: 0.8em;
+            opacity: 0.7;
+            margin-top: 5px;
+        }
+        
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            padding: 10px 16px;
+            background: #f1f3f4;
+            border-radius: 18px;
+            margin: 8px 0;
+            max-width: 80%;
+        }
+        </style>
+        """, unsafe_allow_html=True)
         
         # Update current step
         self.current_step = self._detect_current_step()
@@ -303,13 +361,22 @@ Always acknowledge the current processing step and provide contextual help. Be c
         }
         
         current_step_name = step_names.get(self.current_step, self.current_step.title())
-        st.subheader(f"🤖 Process Assistant - {current_step_name}")
+        
+        # ChatGPT-style header
+        st.markdown(f"""
+        <div class="chat-header">
+            <h3 style="margin: 0; display: flex; align-items: center;">
+                🤖 AI Assistant - {current_step_name}
+                <span style="margin-left: auto; font-size: 0.8em; opacity: 0.8;">✨ Powered by GROQ</span>
+            </h3>
+        </div>
+        """, unsafe_allow_html=True)
         
         # Step-aware welcome message for first query
         if self.current_step not in st.session_state.step_first_query:
             welcome_messages = {
                 'english': {
-                    'upload': "👋 Welcome! I'm here to help you upload and review your survey data. What would you like to know?",
+                    'upload': "👋 Welcome! I'm your AI assistant for survey data processing. I'm here to help you upload and review your survey data. What would you like to know?",
                     'schema': "🗂️ Great! Now I can help you configure your data schema. Any questions about your data structure?", 
                     'cleaning': "🧹 Perfect! I'm ready to assist with data cleaning. What cleaning questions do you have?",
                     'weighting': "⚖️ Excellent! I can help you apply survey weights. Ready to discuss weighting strategies?",
@@ -318,7 +385,7 @@ Always acknowledge the current processing step and provide contextual help. Be c
             }
             
             language = st.session_state.chatbot_language
-            welcome_msg = welcome_messages.get(language, welcome_messages['english']).get(self.current_step, "Hello! How can I help you?")
+            welcome_msg = welcome_messages.get(language, welcome_messages['english']).get(self.current_step, "Hello! How can I help you with your survey data processing?")
             
             # Add welcome message to chat
             st.session_state.step_chat_messages[self.current_step].append({
@@ -328,14 +395,47 @@ Always acknowledge the current processing step and provide contextual help. Be c
             })
             st.session_state.step_first_query[self.current_step] = True
 
-        # Display chat messages using streamlit chat UI
-        for message in st.session_state.step_chat_messages[self.current_step]:
-            with st.chat_message(message["role"]):
-                st.write(message["content"])
-                st.caption(f"⏰ {message['timestamp']}")
+        # ChatGPT-style chat container
+        with st.container():
+            st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+            
+            # Display chat messages with ChatGPT-style formatting
+            for message in st.session_state.step_chat_messages[self.current_step]:
+                if message["role"] == "user":
+                    st.markdown(f"""
+                    <div style="display: flex; justify-content: flex-end; margin: 10px 0;">
+                        <div class="user-message">
+                            <strong>👤 You</strong><br>
+                            {message["content"]}
+                            <div class="timestamp">{message['timestamp']}</div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div style="display: flex; justify-content: flex-start; margin: 10px 0;">
+                        <div class="assistant-message">
+                            <strong>🤖 AI Assistant</strong><br>
+                            {message["content"]}
+                            <div class="timestamp">{message['timestamp']}</div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        # Chat input
-        if prompt := st.chat_input(f"Ask about {current_step_name.lower()}..."):
+        # ChatGPT-style input with enhanced placeholder
+        placeholder_messages = {
+            'upload': 'Ask me about uploading your survey data...',
+            'schema': 'Ask me about configuring your data schema...',
+            'cleaning': 'Ask me about cleaning and validating your data...',
+            'weighting': 'Ask me about applying survey weights...',
+            'analysis': 'Ask me about analyzing your results...'
+        }
+        
+        placeholder = placeholder_messages.get(self.current_step, 'Type your question here...')
+        
+        if prompt := st.chat_input(placeholder):
             # Add user message to chat
             user_msg = {
                 "role": "user", 
@@ -344,56 +444,133 @@ Always acknowledge the current processing step and provide contextual help. Be c
             }
             st.session_state.step_chat_messages[self.current_step].append(user_msg)
             
-            # Display user message
-            with st.chat_message("user"):
-                st.write(prompt)
-                st.caption(f"⏰ {user_msg['timestamp']}")
-
+            # Show typing indicator
+            with st.empty():
+                st.markdown("""
+                <div style="display: flex; justify-content: flex-start; margin: 10px 0;">
+                    <div class="typing-indicator">
+                        <strong>🤖 AI Assistant</strong> is typing
+                        <span style="margin-left: 10px;">• • •</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            
             # Generate AI response
-            with st.chat_message("assistant"):
-                with st.spinner("🤔 Thinking..."):
-                    language = st.session_state.chatbot_language
-                    ai_response = self._get_ai_response(prompt, language, self.current_step)
-                
-                st.write(ai_response)
-                timestamp = datetime.now().strftime("%H:%M")
-                st.caption(f"⏰ {timestamp}")
-                
-                # Add AI response to chat
-                assistant_msg = {
-                    "role": "assistant", 
-                    "content": ai_response,
-                    "timestamp": timestamp
-                }
-                st.session_state.step_chat_messages[self.current_step].append(assistant_msg)
+            language = st.session_state.chatbot_language
+            ai_response = self._get_ai_response(prompt, language, self.current_step)
+            
+            # Add AI response to chat
+            assistant_msg = {
+                "role": "assistant", 
+                "content": ai_response,
+                "timestamp": datetime.now().strftime("%H:%M")
+            }
+            st.session_state.step_chat_messages[self.current_step].append(assistant_msg)
 
-        # Language selector in sidebar
+        # Enhanced sidebar with ChatGPT-style options
         with st.sidebar:
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                        color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+                <h4 style="margin: 0; text-align: center;">🤖 AI Chat Settings</h4>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Language selector with improved styling
             st.markdown("**🌐 Chat Language**")
             language_options = {
-                'English': 'english',
-                'हिन्दी': 'hindi', 
-                'ગુજરાતી': 'gujarati'
+                '🇺🇸 English': 'english',
+                '🇮🇳 हिन्दी': 'hindi', 
+                '🇮🇳 ગુજરાતી': 'gujarati'
             }
             
             selected_lang = st.selectbox(
-                "Language",
+                "Select Language",
                 options=list(language_options.keys()),
                 index=list(language_options.values()).index(st.session_state.chatbot_language),
                 key="chatbot_language_selector"
             )
             st.session_state.chatbot_language = language_options[selected_lang]
+            
+            # Quick action buttons
+            st.markdown("---")
+            st.markdown("**⚡ Quick Actions**")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("📈 Data Summary", key="quick_summary"):
+                    summary_prompt = "Can you give me a quick summary of my current data and processing status?"
+                    self._add_quick_message(summary_prompt)
+                    
+            with col2:
+                if st.button("📝 Tips", key="quick_tips"):
+                    tips_prompt = "What are some best practices and tips for this current step?"
+                    self._add_quick_message(tips_prompt)
 
-        # Cross-step navigation in sidebar
+        # Cross-step navigation in sidebar with improved styling
         with st.sidebar:
-            st.markdown("**📋 Step History**")
+            st.markdown("---")
+            st.markdown("**📋 Processing Journey**")
+            
+            # Progress visualization
+            completed_steps = sum(1 for summary in st.session_state.cross_step_memory.values() if summary.get('completed', False))
+            total_steps = len(st.session_state.cross_step_memory) if st.session_state.cross_step_memory else 5
+            
+            if total_steps > 0:
+                progress = completed_steps / total_steps
+                st.progress(progress)
+                st.write(f"✨ Progress: {completed_steps}/{total_steps} steps completed")
+            
+            # Step history with enhanced display
             for step, summary in st.session_state.cross_step_memory.items():
-                status_icon = "✅" if summary['completed'] else "⏳"
-                st.write(f"{status_icon} **{step.title()}**: {summary['summary']}")
+                status_icon = "✅" if summary.get('completed', False) else "⏳"
+                current_icon = "➡️" if step == self.current_step else ""
+                st.markdown(f"{status_icon}{current_icon} **{step.title()}**")
+                st.caption(summary.get('summary', 'In progress...'))
 
-        # Clear chat option
-        if st.button("🗑️ Clear Current Step Chat", key="clear_step_chat"):
-            st.session_state.step_chat_messages[self.current_step] = []
-            if self.current_step in st.session_state.step_first_query:
-                del st.session_state.step_first_query[self.current_step]
-            st.rerun()
+        # Chat management options
+        st.markdown("---")
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            if st.button("🗑️ Clear Chat", key="clear_step_chat", help="Clear current step's chat history"):
+                st.session_state.step_chat_messages[self.current_step] = []
+                if self.current_step in st.session_state.step_first_query:
+                    del st.session_state.step_first_query[self.current_step]
+                st.success("Chat cleared! ✨")
+        
+        with col2:
+            # Export chat button
+            if st.button("💾 Export Chat", key="export_chat", help="Export chat history"):
+                chat_history = st.session_state.step_chat_messages.get(self.current_step, [])
+                if chat_history:
+                    chat_text = "\n\n".join([f"{msg['timestamp']} - {msg['role'].title()}: {msg['content']}" for msg in chat_history])
+                    st.download_button(
+                        label="Download Chat History",
+                        data=chat_text,
+                        file_name=f"chat_history_{self.current_step}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                        mime="text/plain"
+                    )
+                else:
+                    st.info("No chat history to export")
+    
+    def _add_quick_message(self, message):
+        """Add a quick action message to the chat."""
+        user_msg = {
+            "role": "user", 
+            "content": message,
+            "timestamp": datetime.now().strftime("%H:%M")
+        }
+        st.session_state.step_chat_messages[self.current_step].append(user_msg)
+        
+        # Generate AI response
+        language = st.session_state.chatbot_language
+        ai_response = self._get_ai_response(message, language, self.current_step)
+        
+        # Add AI response to chat
+        assistant_msg = {
+            "role": "assistant", 
+            "content": ai_response,
+            "timestamp": datetime.now().strftime("%H:%M")
+        }
+        st.session_state.step_chat_messages[self.current_step].append(assistant_msg)
