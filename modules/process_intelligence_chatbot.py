@@ -97,6 +97,184 @@ class ProcessIntelligenceChatbot:
                     topics.append('analysis')
         return list(set(topics))  # Remove duplicates
     
+    def _get_intelligent_response(self, user_message, current_step):
+        """Generate intelligent responses based on user intent and real data."""
+        message_lower = user_message.lower()
+        context = self._get_step_context(current_step)
+        
+        # Handle complaints about repetition
+        repetition_keywords = ['same answer', 'repeating', 'repeat', 'generic', 'template', 'boring']
+        if any(keyword in message_lower for keyword in repetition_keywords):
+            return "I apologize for the repetitive responses! Let me be more specific and helpful. What exact information would you like me to provide about your data or the current processing step?"
+        
+        # Handle specific data queries with real numbers
+        data_info = context.get('data_info', {})
+        detailed_stats = context.get('detailed_stats', {})
+        processing_results = context.get('processing_results', {})
+        
+        # Missing values queries
+        if any(keyword in message_lower for keyword in ['missing', 'null', 'empty', 'blank']):
+            if data_info:
+                missing_count = data_info.get('missing_values', 0)
+                missing_pct = data_info.get('missing_percentage', 0)
+                total_rows = data_info.get('total_rows', 0)
+                columns_with_missing = detailed_stats.get('columns_with_missing', [])
+                
+                response = f"📊 **Missing Values Analysis:**\n"
+                response += f"• Total missing values: **{missing_count:,}**\n"
+                response += f"• Missing percentage: **{missing_pct:.2f}%**\n"
+                response += f"• Total rows: **{total_rows:,}**\n\n"
+                
+                if columns_with_missing:
+                    response += "**Columns with most missing values:**\n"
+                    for col, count in columns_with_missing[:3]:
+                        response += f"• {col}: {count} missing\n"
+                
+                return response
+            return "I don't see any data uploaded yet. Please upload your data file first to analyze missing values."
+        
+        # Records/rows queries
+        if any(keyword in message_lower for keyword in ['records', 'rows', 'entries', 'how many']):
+            if data_info:
+                rows = data_info.get('total_rows', 0)
+                cols = data_info.get('total_columns', 0)
+                response = f"📈 **Data Overview:**\n"
+                response += f"• **{rows:,}** total records/rows\n"
+                response += f"• **{cols}** columns\n"
+                
+                # Add cleaning info if available
+                if 'cleaning' in processing_results:
+                    cleaning = processing_results['cleaning']
+                    rows_after = cleaning.get('rows_after_cleaning', rows)
+                    removed = cleaning.get('rows_removed', 0)
+                    if removed > 0:
+                        response += f"• **{removed:,}** rows removed during cleaning\n"
+                        response += f"• **{rows_after:,}** rows remaining after cleaning\n"
+                        
+                return response
+            return "No data has been uploaded yet. Upload your CSV or Excel file to see record counts."
+        
+        # Columns queries
+        if any(keyword in message_lower for keyword in ['columns', 'fields', 'variables']):
+            if data_info and detailed_stats:
+                total_cols = data_info.get('total_columns', 0)
+                numeric_cols = data_info.get('numeric_columns', 0)
+                categorical_cols = data_info.get('categorical_columns', 0)
+                column_names = detailed_stats.get('column_names', [])
+                
+                response = f"📋 **Column Analysis:**\n"
+                response += f"• **{total_cols}** total columns\n"
+                response += f"• **{numeric_cols}** numeric columns\n"
+                response += f"• **{categorical_cols}** categorical columns\n\n"
+                
+                if column_names:
+                    response += f"**First {len(column_names)} columns:** {', '.join(column_names)}\n"
+                    
+                return response
+            return "No data schema available. Please upload your data to see column information."
+        
+        # Status and progress queries
+        if any(keyword in message_lower for keyword in ['status', 'progress', 'completed', 'done']):
+            step_status = context.get('step_status', 'pending')
+            response = f"🔄 **Current Status: {current_step.title()} - {step_status.title()}**\n\n"
+            
+            if data_info:
+                response += f"✅ Data uploaded: {data_info.get('total_rows', 0):,} rows, {data_info.get('total_columns', 0)} columns\n"
+            
+            if 'cleaning' in processing_results:
+                cleaning = processing_results['cleaning']
+                response += f"✅ Data cleaned: {cleaning.get('rows_after_cleaning', 0):,} rows remaining\n"
+                
+            if 'weighting' in processing_results:
+                response += f"✅ Weights applied: Analysis ready\n"
+                
+            return response
+            
+        return None  # No intelligent response found, use AI
+    
+    def _get_recent_chat_history(self, current_step):
+        """Get recent chat history for context."""
+        if current_step not in st.session_state.step_chat_messages:
+            return "No previous conversation."
+            
+        messages = st.session_state.step_chat_messages[current_step]
+        if len(messages) <= 1:  # Only welcome message
+            return "This is the start of our conversation."
+            
+        # Get last 4 messages (2 user + 2 assistant)
+        recent = messages[-4:] if len(messages) >= 4 else messages[1:]  # Skip welcome message
+        history_str = ""
+        
+        for msg in recent:
+            role = "User" if msg['role'] == 'user' else "Assistant"
+            content = msg['content'][:100] + "..." if len(msg['content']) > 100 else msg['content']
+            history_str += f"{role}: {content}\n"
+            
+        return history_str
+    
+    def _build_comprehensive_context(self, context, user_message):
+        """Build comprehensive context string with real data."""
+        context_parts = []
+        
+        # Current step and status
+        context_parts.append(f"CURRENT STEP: {context['step'].upper()}")
+        context_parts.append(f"STATUS: {context.get('step_status', 'pending').upper()}")
+        
+        # Real data information
+        if context.get('data_info'):
+            data_info = context['data_info']
+            context_parts.append("\nREAL DATA METRICS:")
+            context_parts.append(f"- Records: {data_info.get('total_rows', 0):,}")
+            context_parts.append(f"- Columns: {data_info.get('total_columns', 0)}")
+            context_parts.append(f"- Missing values: {data_info.get('missing_values', 0):,} ({data_info.get('missing_percentage', 0):.2f}%)")
+            context_parts.append(f"- Numeric columns: {data_info.get('numeric_columns', 0)}")
+            context_parts.append(f"- Categorical columns: {data_info.get('categorical_columns', 0)}")
+        
+        # Processing results
+        if context.get('processing_results'):
+            for step_name, results in context['processing_results'].items():
+                context_parts.append(f"\n{step_name.upper()} RESULTS:")
+                for key, value in results.items():
+                    if isinstance(value, (int, float)):
+                        context_parts.append(f"- {key}: {value:,}" if isinstance(value, int) else f"- {key}: {value:.2f}")
+                    else:
+                        context_parts.append(f"- {key}: {value}")
+        
+        return "\n".join(context_parts)
+    
+    def _create_enhanced_system_prompt(self, language, current_step, context):
+        """Create enhanced system prompt that prioritizes real data."""
+        prompt = f"""You are an intelligent Survey Data Processing Assistant for step: {current_step.upper()}.
+
+CRITICAL INSTRUCTIONS:
+1. ALWAYS use the REAL DATA METRICS provided in the context - never give generic responses
+2. When users ask about numbers (records, missing values, columns), provide the EXACT values from the context
+3. Be specific, helpful, and reference actual data whenever possible
+4. If you don't have the exact data requested, say so clearly and suggest alternatives
+5. Adapt your responses based on chat history - avoid repetition
+6. If users complain about repetitive answers, acknowledge and provide more specific help
+
+Your expertise for {current_step}:
+- Upload: Help with data uploading, file formats, initial data review
+- Cleaning: Assist with missing values, outliers, data quality issues
+- Weighting: Guide survey weight application and statistical calculations  
+- Analysis: Help interpret results and create visualizations
+
+Always be conversational, specific with numbers, and helpful."""
+        
+        return prompt
+    
+    def _get_contextual_fallback(self, user_message, language, current_step):
+        """Provide contextual fallback response with real data when possible."""
+        context = self._get_step_context(current_step)
+        data_info = context.get('data_info', {})
+        
+        # If we have data, provide real statistics
+        if data_info:
+            return f"I'm having trouble connecting to the AI service, but I can tell you about your data: You have {data_info.get('total_rows', 0):,} records with {data_info.get('total_columns', 0)} columns. Missing values: {data_info.get('missing_values', 0):,} ({data_info.get('missing_percentage', 0):.2f}%). What specific aspect would you like to know more about?"
+        
+        return f"I'm having trouble connecting to the AI service. Please upload your data first, then I can provide specific information about your dataset. What would you like to do in the {current_step} step?"
+    
     def _get_relevant_cross_step_context(self, user_message):
         """Get relevant context from previous steps based on user's question."""
         if not st.session_state.cross_step_memory:
@@ -195,64 +373,88 @@ class ProcessIntelligenceChatbot:
             self.client = None  # Silent fallback
 
     def _get_step_context(self, step=None):
-        """Get context specific to a processing step."""
+        """Get comprehensive context specific to a processing step with real data."""
         target_step = step or self.current_step
         
-        if target_step in self._context_cache:
-            return self._context_cache[target_step]
-            
+        # Don't cache context as data changes frequently
         context = {
             'step': target_step,
             'data_info': {},
             'step_status': 'pending',
-            'previous_steps': [],
-            'next_steps': [],
-            'recommendations': []
+            'detailed_stats': {},
+            'processing_results': {},
+            'actionable_insights': []
         }
         
         try:
-            # Data information with safe handling
+            # Comprehensive data information extraction
             if st.session_state.get('data') is not None:
                 data = st.session_state.data
                 if data is not None and hasattr(data, 'shape'):
+                    total_cells = data.shape[0] * data.shape[1]
+                    missing_count = data.isnull().sum().sum()
+                    
                     context['data_info'] = {
                         'total_rows': int(data.shape[0]),
                         'total_columns': int(data.shape[1]),
-                        'missing_values': int(data.isnull().sum().sum()),
-                        'missing_percentage': float((data.isnull().sum().sum() / (data.shape[0] * data.shape[1])) * 100),
+                        'missing_values': int(missing_count),
+                        'missing_percentage': float((missing_count / total_cells) * 100) if total_cells > 0 else 0,
                         'numeric_columns': int(len(data.select_dtypes(include=[np.number]).columns)),
                         'categorical_columns': int(len(data.select_dtypes(include=['object']).columns)),
                         'duplicates': int(data.duplicated().sum()) if hasattr(data, 'duplicated') else 0
                     }
+                    
+                    # Detailed column-wise missing data analysis
+                    missing_by_column = data.isnull().sum().sort_values(ascending=False)
+                    context['detailed_stats'] = {
+                        'columns_with_missing': list(missing_by_column[missing_by_column > 0].head(5).to_dict().items()),
+                        'complete_columns': int((missing_by_column == 0).sum()),
+                        'column_names': list(data.columns[:10]),  # First 10 columns
+                        'data_types': data.dtypes.value_counts().to_dict()
+                    }
+                    
                     context['step_status'] = 'completed' if target_step == 'upload' else 'available'
             
-            # Cleaned data information with safe handling
+            # Comprehensive cleaning results
             if st.session_state.get('cleaned_data') is not None:
                 cleaned = st.session_state.cleaned_data
                 if cleaned is not None and hasattr(cleaned, 'shape'):
                     original_rows = context['data_info'].get('total_rows', 0)
                     rows_removed = original_rows - cleaned.shape[0] if original_rows > 0 else 0
+                    original_missing = context['data_info'].get('missing_values', 0)
+                    remaining_missing = int(cleaned.isnull().sum().sum())
                     
-                    context['cleaning_results'] = {
+                    context['processing_results']['cleaning'] = {
                         'rows_after_cleaning': int(cleaned.shape[0]),
                         'rows_removed': int(rows_removed),
                         'removal_percentage': float((rows_removed / original_rows * 100)) if original_rows > 0 else 0,
-                        'remaining_missing': int(cleaned.isnull().sum().sum()),
-                        'quality_improvement': 'significant' if rows_removed > 0 else 'minimal'
+                        'original_missing': original_missing,
+                        'remaining_missing': remaining_missing,
+                        'missing_values_fixed': original_missing - remaining_missing,
+                        'quality_improvement': 'significant' if rows_removed > 0 or (original_missing - remaining_missing) > 0 else 'minimal'
                     }
                     if target_step == 'cleaning':
                         context['step_status'] = 'completed'
 
-            # Weighted results
+            # Comprehensive weighting and analysis results  
             if st.session_state.get('weighted_results') is not None:
                 results = st.session_state.weighted_results
-                context['weighting_info'] = {
+                context['processing_results']['weighting'] = {
                     'weights_applied': True,
                     'analysis_completed': True,
-                    'statistical_results': 'available'
+                    'statistical_results': 'available',
+                    'result_type': type(results).__name__
                 }
                 if target_step in ['weighting', 'analysis']:
                     context['step_status'] = 'completed'
+            
+            # Processing log insights
+            if st.session_state.get('processing_log'):
+                recent_logs = st.session_state.processing_log[-3:]  # Last 3 log entries
+                context['processing_results']['recent_activity'] = [
+                    f"{log.get('action', 'Unknown')}: {log.get('details', 'No details')}"
+                    for log in recent_logs
+                ]
             
             # Processing log with step awareness
             if st.session_state.get('processing_log'):
@@ -265,10 +467,11 @@ class ProcessIntelligenceChatbot:
             self._build_step_summary(target_step, context)
                 
         except Exception as e:
-            # Graceful fallback
+            # Graceful fallback with error details
             context['error'] = f"Context extraction error: {str(e)}"
+            context['fallback_mode'] = True
             
-        self._context_cache[target_step] = context
+        # Don't cache to ensure fresh data
         return context
     
     def _build_step_summary(self, step, context):
@@ -376,49 +579,45 @@ Be conversational, specific with numbers, and seamlessly reference cross-step in
         return responses.get(current_step, responses['upload'])
     
     def _get_ai_response(self, user_message, language, current_step):
-        """Get response from Groq AI with cross-step memory integration."""
+        """Get intelligent response using real data and user intent detection."""
+        # First try intelligent rule-based responses for specific data queries
+        intelligent_response = self._get_intelligent_response(user_message, current_step)
+        if intelligent_response:
+            return intelligent_response
+            
+        # Fall back to AI if available
         if not self.client:
-            return self._get_fallback_response(user_message, language, current_step)
+            return self._get_contextual_fallback(user_message, language, current_step)
         
         try:
             context = self._get_step_context(current_step)
-            system_prompt = self._create_system_prompt(language, current_step)
+            system_prompt = self._create_enhanced_system_prompt(language, current_step, context)
             
-            # Check if user is asking about previous steps and get relevant memory
-            cross_step_context = self._get_relevant_cross_step_context(user_message)
+            # Get conversation history for context
+            chat_history = self._get_recent_chat_history(current_step)
             
-            # Create comprehensive context string
-            context_str = f"""
-            CURRENT STEP: {current_step}
-            Status: {context.get('step_status', 'pending')}
-            Data: {context.get('data_info', {})}
+            # Create detailed context with real data
+            context_str = self._build_comprehensive_context(context, user_message)
             
-            PREVIOUS STEPS COMPLETED: {list(st.session_state.cross_step_memory.keys())}
-            
-            CROSS-STEP CONTEXT (if relevant to question):
-            {cross_step_context}
-            """
-            
-            # Prepare messages for Groq
+            # Prepare messages with chat history
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Context: {context_str}\n\nUser Question: {user_message}"}
+                {"role": "user", "content": f"Context: {context_str}\n\nChat History: {chat_history}\n\nUser Question: {user_message}"}
             ]
             
-            # Call Groq API with optimized settings
+            # Call Groq API
             response = self.client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=messages,
-                max_tokens=400,
-                temperature=0.6,
-                timeout=8
+                max_tokens=500,  # Increased for more detailed responses
+                temperature=0.4,  # Lower for more consistent responses
+                timeout=10
             )
             
             return response.choices[0].message.content.strip()
             
         except Exception as e:
-            # Log error and provide fallback
-            return self._get_fallback_response(user_message, language, current_step)
+            return self._get_contextual_fallback(user_message, language, current_step)
 
     def display_chatbot(self):
         """Display the step-aware Process Intelligence Chatbot interface using Streamlit's native chat components."""

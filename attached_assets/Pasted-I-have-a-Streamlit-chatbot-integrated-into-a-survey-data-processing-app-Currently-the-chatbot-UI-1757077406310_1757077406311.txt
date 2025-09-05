@@ -1,0 +1,28 @@
+I have a Streamlit chatbot integrated into a survey data processing app. 
+Currently, the chatbot UI looks fine, but the responses are repetitive and not contextual. 
+For example:
+- When I ask "how many missing values are there?" it just says "I’m here to help with data upload…" instead of giving the actual missing percentage from session_state.
+- When I ask "why are you giving same answers?" it repeats the same template instead of acknowledging.
+
+### Issues to Fix
+1. The chatbot always repeats a default response instead of using the actual user query.
+2. It is not pulling relevant context (records, columns, missing %, schema, cleaning log, etc.) from `st.session_state`.
+3. It is not using `chat_history` properly, so it cannot adapt to previous queries.
+4. It does not apologize or adapt when the user complains about repetition.
+
+### Goals
+- Make responses dynamic based on the query and step.
+- At the "Data Upload" step, if the user asks about missing values, records, or columns → fetch from session_state and respond.
+- At later steps (Cleaning, Weighting, Report), it should also be able to reference earlier step summaries.
+- Ensure chat history is appended correctly so the assistant can avoid repeating the same template.
+- Add fallback behavior: if the model cannot find an answer in context, provide a helpful message like "I couldn’t find that info for Data Upload, would you like me to check the Cleaning step?"
+
+### Deliverable
+Refactor my chatbot class (ProcessIntelligenceChatbot) so that:
+- It uses `st.chat_input` and `st.chat_message`.
+- It dynamically injects current step context + summaries from previous steps into the LLM prompt.
+- It checks user intent and responds with actual data (records, missing %, etc.) where available.
+- It acknowledges user complaints and avoids repeating generic responses.
+- It still maintains a clean, production-ready UI.
+
+Please provide clean, working Python/Streamlit code that I can replace in my project.
