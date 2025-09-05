@@ -173,6 +173,29 @@ class ProcessIntelligenceChatbot:
                 return response
             return "No data schema available. Please upload your data to see column information."
         
+        # Cleaning process queries
+        if any(keyword in message_lower for keyword in ['cleaning', 'clean', 'how', 'process', 'done', 'method']):
+            if 'cleaning' in processing_results:
+                cleaning = processing_results['cleaning']
+                original_rows = data_info.get('total_rows', 0)
+                remaining_rows = cleaning.get('rows_after_cleaning', 0)
+                removed_rows = cleaning.get('rows_removed', 0)
+                fixed_missing = cleaning.get('missing_values_fixed', 0)
+                
+                response = f"🧹 **Data Cleaning Summary:**\n\n"
+                response += f"**Original Data:**\n• {original_rows:,} total rows\n• {data_info.get('missing_values', 0):,} missing values\n\n"
+                response += f"**Cleaning Results:**\n• {remaining_rows:,} rows kept ({((remaining_rows/original_rows)*100):.1f}%)\n"
+                if removed_rows > 0:
+                    response += f"• {removed_rows:,} rows removed ({((removed_rows/original_rows)*100):.1f}%)\n"
+                if fixed_missing > 0:
+                    response += f"• {fixed_missing:,} missing values fixed\n"
+                response += f"• Data quality: {cleaning.get('quality_improvement', 'improved')}\n\n"
+                response += "**Methods Used:** Missing value imputation, outlier detection, duplicate removal"
+                
+                return response
+            else:
+                return f"Data cleaning hasn't been completed yet. Your current data has {data_info.get('missing_values', 0):,} missing values ({data_info.get('missing_percentage', 0):.2f}%) that can be addressed in the cleaning step."
+        
         # Status and progress queries
         if any(keyword in message_lower for keyword in ['status', 'progress', 'completed', 'done']):
             step_status = context.get('step_status', 'pending')
@@ -230,15 +253,20 @@ class ProcessIntelligenceChatbot:
             context_parts.append(f"- Numeric columns: {data_info.get('numeric_columns', 0)}")
             context_parts.append(f"- Categorical columns: {data_info.get('categorical_columns', 0)}")
         
-        # Processing results
-        if context.get('processing_results'):
+        # Processing results (with safe handling)
+        if context.get('processing_results') and isinstance(context.get('processing_results'), dict):
             for step_name, results in context['processing_results'].items():
                 context_parts.append(f"\n{step_name.upper()} RESULTS:")
-                for key, value in results.items():
-                    if isinstance(value, (int, float)):
-                        context_parts.append(f"- {key}: {value:,}" if isinstance(value, int) else f"- {key}: {value:.2f}")
-                    else:
-                        context_parts.append(f"- {key}: {value}")
+                if isinstance(results, dict):
+                    for key, value in results.items():
+                        if isinstance(value, (int, float)):
+                            context_parts.append(f"- {key}: {value:,}" if isinstance(value, int) else f"- {key}: {value:.2f}")
+                        elif isinstance(value, list):
+                            context_parts.append(f"- {key}: {', '.join(map(str, value[:3]))}")  # Show first 3 items
+                        else:
+                            context_parts.append(f"- {key}: {value}")
+                else:
+                    context_parts.append(f"- Results: {results}")
         
         return "\n".join(context_parts)
     
