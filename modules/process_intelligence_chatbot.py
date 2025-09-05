@@ -10,25 +10,26 @@ import traceback
 class ProcessIntelligenceChatbot:
     """Step-aware AI Assistant with proper chat interface and cross-step memory."""
     
-    def __init__(self, current_step=None):
-        # Current processing step awareness
-        self.current_step = current_step or self._detect_current_step()
+    def __init__(self, current_step=None, current_page=None):
+        # Current processing step awareness - now based on actual page selection
+        self.current_page = current_page
+        self.current_step = current_step or self._detect_current_step_from_page(current_page)
         
         # Initialize Groq client
         self.client = None
         self._init_groq_client()
         
-        # Initialize step-aware chat history
+        # Initialize step-aware chat history with proper isolation
         if 'step_chat_messages' not in st.session_state:
             st.session_state.step_chat_messages = {}
         
-        # Ensure current step has message history
-        if self.current_step not in st.session_state.step_chat_messages:
-            st.session_state.step_chat_messages[self.current_step] = []
-        
-        # Initialize cross-step memory
+        # Initialize cross-step memory for remembering previous conversations
         if 'cross_step_memory' not in st.session_state:
             st.session_state.cross_step_memory = {}
+            
+        # Track current active step to detect transitions
+        if 'current_active_step' not in st.session_state:
+            st.session_state.current_active_step = None
         
         # Language settings
         if 'chatbot_language' not in st.session_state:
@@ -37,13 +38,140 @@ class ProcessIntelligenceChatbot:
         # Track first query per step
         if 'step_first_query' not in st.session_state:
             st.session_state.step_first_query = {}
+        
+        # Initialize current step with clean history
+        self._initialize_step_chatbot()
             
         # Context cache with step awareness
         self._context_cache = {}
         self._step_summaries = {}
+    
+    def _initialize_step_chatbot(self):
+        """Initialize chatbot for current step with proper isolation."""
+        # Detect step transition
+        if st.session_state.current_active_step != self.current_step:
+            # Store previous step's conversation in cross-step memory before switching
+            if st.session_state.current_active_step is not None:
+                self._store_step_conversation_in_memory(st.session_state.current_active_step)
+            
+            # Update active step
+            st.session_state.current_active_step = self.current_step
+            
+            # Reset first query flag for new step
+            if self.current_step not in st.session_state.step_first_query:
+                st.session_state.step_first_query[self.current_step] = False
+        
+        # Ensure current step has clean message history
+        if self.current_step not in st.session_state.step_chat_messages:
+            st.session_state.step_chat_messages[self.current_step] = []
+    
+    def _store_step_conversation_in_memory(self, step):
+        """Store step's conversation in cross-step memory for future reference."""
+        if step in st.session_state.step_chat_messages:
+            messages = st.session_state.step_chat_messages[step]
+            if messages:  # Only store if there are messages
+                # Create a summary of the conversation
+                conversation_summary = {
+                    'step': step,
+                    'message_count': len(messages),
+                    'last_activity': messages[-1].get('timestamp', 'Unknown') if messages else None,
+                    'key_topics': self._extract_key_topics(messages),
+                    'full_conversation': messages  # Store full conversation for reference
+                }
+                st.session_state.cross_step_memory[step] = conversation_summary
+    
+    def _extract_key_topics(self, messages):
+        """Extract key topics from conversation for quick reference."""
+        topics = []
+        for msg in messages[-5:]:  # Look at last 5 messages
+            if msg['role'] == 'user':
+                content = msg['content'].lower()
+                # Simple keyword extraction
+                if 'upload' in content or 'file' in content:
+                    topics.append('data_upload')
+                elif 'clean' in content or 'missing' in content:
+                    topics.append('data_cleaning')
+                elif 'weight' in content or 'survey' in content:
+                    topics.append('weighting')
+                elif 'analysis' in content or 'result' in content:
+                    topics.append('analysis')
+        return list(set(topics))  # Remove duplicates
+    
+    def _get_relevant_cross_step_context(self, user_message):
+        """Get relevant context from previous steps based on user's question."""
+        if not st.session_state.cross_step_memory:
+            return "No previous step conversations available."
+        
+        relevant_context = []
+        user_msg_lower = user_message.lower()
+        
+        # Keywords that indicate questions about previous steps
+        step_keywords = {
+            'upload': ['upload', 'file', 'data loading', 'import'],
+            'cleaning': ['clean', 'missing', 'duplicate', 'outlier', 'validation'],
+            'weighting': ['weight', 'survey weight', 'statistical'],
+            'analysis': ['analysis', 'result', 'visualization', 'report']
+        }
+        
+        # Check if user is asking about specific previous steps
+        for step, memory in st.session_state.cross_step_memory.items():
+            step_mentioned = False
+            
+            # Check if step keywords match user question
+            if step in step_keywords:
+                for keyword in step_keywords[step]:
+                    if keyword in user_msg_lower:
+                        step_mentioned = True
+                        break
+            
+            # Also check if step name is directly mentioned
+            if step in user_msg_lower:
+                step_mentioned = True
+            
+            if step_mentioned:
+                # Get summary from memory
+                relevant_context.append(f"""
+                STEP {step.upper()}:
+                - {memory.get('summary', 'No summary available')}
+                - Messages: {memory.get('message_count', 0)}
+                - Last activity: {memory.get('last_activity', 'Unknown')}
+                - Topics discussed: {', '.join(memory.get('key_topics', []))}
+                """)
+        
+        if relevant_context:
+            return '\n'.join(relevant_context)
+        else:
+            # If no specific step mentioned, provide general overview
+            overview = []
+            for step, memory in st.session_state.cross_step_memory.items():
+                overview.append(f"- {step}: {memory.get('summary', 'completed')}")
+            
+            if overview:
+                return f"Previous steps completed:\n" + '\n'.join(overview)
+            else:
+                return "No previous step conversations available."
 
-    def _detect_current_step(self):
-        """Detect current processing step based on session state."""
+    def _detect_current_step_from_page(self, current_page=None):
+        """Detect current processing step based on actual page selection."""
+        if current_page is None:
+            # Fallback to old logic if no page provided
+            return self._detect_current_step_fallback()
+        
+        # Map page names to step names
+        page_to_step = {
+            "📁 Data Upload & Schema": "upload",
+            "🧹 Data Cleaning": "cleaning", 
+            "⚖️ Weight Application": "weighting",
+            "📈 Analysis & Visualization": "analysis",
+            "📄 Report Generation": "analysis",  # Report generation uses analysis context
+            "🔍 Audit Trail": "analysis",  # Audit trail uses analysis context
+            "📋 Processing Log": "analysis"  # Processing log uses analysis context
+        }
+        
+        return page_to_step.get(current_page, "upload")
+    
+    def _detect_current_step_fallback(self):
+        """Fallback step detection based on session state (old logic)."""
         if st.session_state.get('weighted_results'):
             return 'analysis'
         elif st.session_state.get('cleaned_data') is not None:
@@ -51,7 +179,7 @@ class ProcessIntelligenceChatbot:
         elif st.session_state.get('schema'):
             return 'cleaning'
         elif st.session_state.get('data') is not None:
-            return 'schema'
+            return 'upload'  # Changed from 'schema' to 'upload' to match page
         else:
             return 'upload'
     
@@ -177,12 +305,15 @@ CURRENT STEP: {current_step.upper()} - {current_context}
 
 Your role is to:
 1. PRIORITIZE the current step ({current_step}) in your responses
-2. Remember and reference previous completed steps when relevant
-3. Provide step-specific guidance and insights
-4. Answer questions about methodology and results across all steps
-5. Give actionable, step-appropriate suggestions
+2. Access and reference previous step conversations from cross-step memory when relevant
+3. Provide step-specific guidance while maintaining awareness of the full process
+4. Answer questions about ANY previous step using stored conversation context
+5. Give actionable, step-appropriate suggestions for the current step
+6. Bridge information between steps when users ask comparative questions
 
-Always acknowledge the current processing step and provide contextual help. Be conversational, specific with numbers, and reference cross-step information when asked.""",
+IMPORTANT: You have access to previous step conversations through cross-step context. When users ask about previous steps, reference this information specifically. Always acknowledge the current step but can answer about any completed step using your memory.
+
+Be conversational, specific with numbers, and seamlessly reference cross-step information when asked.""",
 
             'hindi': f"""आप एक Step-Aware Survey Data Processing Platform के लिए Process Intelligence Assistant हैं।
 
@@ -245,7 +376,7 @@ Always acknowledge the current processing step and provide contextual help. Be c
         return responses.get(current_step, responses['upload'])
     
     def _get_ai_response(self, user_message, language, current_step):
-        """Get response from Groq AI with comprehensive error handling."""
+        """Get response from Groq AI with cross-step memory integration."""
         if not self.client:
             return self._get_fallback_response(user_message, language, current_step)
         
@@ -253,12 +384,19 @@ Always acknowledge the current processing step and provide contextual help. Be c
             context = self._get_step_context(current_step)
             system_prompt = self._create_system_prompt(language, current_step)
             
-            # Create compact context string to avoid token limits
+            # Check if user is asking about previous steps and get relevant memory
+            cross_step_context = self._get_relevant_cross_step_context(user_message)
+            
+            # Create comprehensive context string
             context_str = f"""
-            Step: {current_step}
+            CURRENT STEP: {current_step}
             Status: {context.get('step_status', 'pending')}
             Data: {context.get('data_info', {})}
-            Previous Steps: {list(st.session_state.cross_step_memory.keys())}
+            
+            PREVIOUS STEPS COMPLETED: {list(st.session_state.cross_step_memory.keys())}
+            
+            CROSS-STEP CONTEXT (if relevant to question):
+            {cross_step_context}
             """
             
             # Prepare messages for Groq
@@ -269,11 +407,11 @@ Always acknowledge the current processing step and provide contextual help. Be c
             
             # Call Groq API with optimized settings
             response = self.client.chat.completions.create(
-                model="llama-3.1-8b-instant",  # Fastest model for better performance
+                model="llama-3.1-8b-instant",
                 messages=messages,
-                max_tokens=400,  # Reduced for faster responses
+                max_tokens=400,
                 temperature=0.6,
-                timeout=8  # 8 second timeout for faster response
+                timeout=8
             )
             
             return response.choices[0].message.content.strip()
@@ -283,69 +421,23 @@ Always acknowledge the current processing step and provide contextual help. Be c
             return self._get_fallback_response(user_message, language, current_step)
 
     def display_chatbot(self):
-        """Display the ChatGPT-style Process Intelligence Chatbot interface."""
-        # Add ChatGPT-style CSS
+        """Display the step-aware Process Intelligence Chatbot interface using Streamlit's native chat components."""
+        # Simple CSS for chat container styling
         st.markdown("""
         <style>
-        .chat-container {
-            background-color: #f7f7f8;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 10px 0;
-            max-height: 600px;
-            overflow-y: auto;
-        }
-        
-        .user-message {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 16px;
-            border-radius: 18px;
-            margin: 8px 0;
-            max-width: 80%;
-            margin-left: auto;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        
-        .assistant-message {
-            background: white;
-            color: #333;
-            padding: 12px 16px;
-            border-radius: 18px;
-            margin: 8px 0;
-            max-width: 80%;
-            border: 1px solid #e1e5e9;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        
         .chat-header {
             background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
             color: white;
             padding: 15px 20px;
-            border-radius: 10px 10px 0 0;
-            margin-bottom: 0;
-        }
-        
-        .timestamp {
-            font-size: 0.8em;
-            opacity: 0.7;
-            margin-top: 5px;
-        }
-        
-        .typing-indicator {
-            display: flex;
-            align-items: center;
-            padding: 10px 16px;
-            background: #f1f3f4;
-            border-radius: 18px;
-            margin: 8px 0;
-            max-width: 80%;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            text-align: center;
         }
         </style>
         """, unsafe_allow_html=True)
         
-        # Update current step
-        self.current_step = self._detect_current_step()
+        # Update current step based on current page
+        self.current_step = self._detect_current_step_from_page(self.current_page)
         
         # Ensure current step has message history
         if self.current_step not in st.session_state.step_chat_messages:
@@ -372,20 +464,25 @@ Always acknowledge the current processing step and provide contextual help. Be c
         </div>
         """, unsafe_allow_html=True)
         
-        # Step-aware welcome message for first query
-        if self.current_step not in st.session_state.step_first_query:
+        # Step-aware welcome message for new steps (proper transition handling)
+        if not st.session_state.step_first_query.get(self.current_step, False):
             welcome_messages = {
                 'english': {
-                    'upload': "👋 Welcome! I'm your AI assistant for survey data processing. I'm here to help you upload and review your survey data. What would you like to know?",
-                    'schema': "🗂️ Great! Now I can help you configure your data schema. Any questions about your data structure?", 
-                    'cleaning': "🧹 Perfect! I'm ready to assist with data cleaning. What cleaning questions do you have?",
-                    'weighting': "⚖️ Excellent! I can help you apply survey weights. Ready to discuss weighting strategies?",
-                    'analysis': "📈 Fantastic! All steps are complete. I can help you understand and analyze your results."
+                    'upload': "👋 Welcome! I'm your AI assistant for data upload and schema configuration. I'm here to help you upload and review your survey data. What would you like to know?",
+                    'cleaning': "🧹 Hello! I'm your AI assistant for data cleaning. I can help you clean, validate, and prepare your data. What cleaning questions do you have?", 
+                    'weighting': "⚖️ Hi there! I'm your AI assistant for survey weighting. I can help you apply weights and perform statistical calculations. Ready to discuss weighting strategies?",
+                    'analysis': "📈 Welcome! I'm your AI assistant for analysis and visualization. I can help you understand and analyze your results. What would you like to explore?"
                 }
             }
             
             language = st.session_state.chatbot_language
             welcome_msg = welcome_messages.get(language, welcome_messages['english']).get(self.current_step, "Hello! How can I help you with your survey data processing?")
+            
+            # Add contextual information based on previous steps
+            if st.session_state.cross_step_memory:
+                completed_steps = list(st.session_state.cross_step_memory.keys())
+                if completed_steps:
+                    welcome_msg += f"\n\n💡 I can also answer questions about previous steps: {', '.join(completed_steps)}"
             
             # Add welcome message to chat
             st.session_state.step_chat_messages[self.current_step].append({
@@ -395,34 +492,14 @@ Always acknowledge the current processing step and provide contextual help. Be c
             })
             st.session_state.step_first_query[self.current_step] = True
 
-        # ChatGPT-style chat container
-        with st.container():
-            st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-            
-            # Display chat messages with ChatGPT-style formatting
+        # Display chat messages using Streamlit's native chat components
+        chat_container = st.container()
+        with chat_container:
+            # Display all messages for current step only (proper isolation)
             for message in st.session_state.step_chat_messages[self.current_step]:
-                if message["role"] == "user":
-                    st.markdown(f"""
-                    <div style="display: flex; justify-content: flex-end; margin: 10px 0;">
-                        <div class="user-message">
-                            <strong>👤 You</strong><br>
-                            {message["content"]}
-                            <div class="timestamp">{message['timestamp']}</div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown(f"""
-                    <div style="display: flex; justify-content: flex-start; margin: 10px 0;">
-                        <div class="assistant-message">
-                            <strong>🤖 AI Assistant</strong><br>
-                            {message["content"]}
-                            <div class="timestamp">{message['timestamp']}</div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            st.markdown('</div>', unsafe_allow_html=True)
+                with st.chat_message(message["role"], avatar="🤖" if message["role"] == "assistant" else "👤"):
+                    st.write(message["content"])
+                    st.caption(f"_{message['timestamp']}_")
 
         # ChatGPT-style input with enhanced placeholder
         placeholder_messages = {
@@ -435,8 +512,9 @@ Always acknowledge the current processing step and provide contextual help. Be c
         
         placeholder = placeholder_messages.get(self.current_step, 'Type your question here...')
         
+        # Chat input with immediate response rendering
         if prompt := st.chat_input(placeholder):
-            # Add user message to chat
+            # Add user message to chat and display immediately
             user_msg = {
                 "role": "user", 
                 "content": prompt,
@@ -444,28 +522,31 @@ Always acknowledge the current processing step and provide contextual help. Be c
             }
             st.session_state.step_chat_messages[self.current_step].append(user_msg)
             
-            # Show typing indicator
-            with st.empty():
-                st.markdown("""
-                <div style="display: flex; justify-content: flex-start; margin: 10px 0;">
-                    <div class="typing-indicator">
-                        <strong>🤖 AI Assistant</strong> is typing
-                        <span style="margin-left: 10px;">• • •</span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+            # Display user message immediately
+            with st.chat_message("user", avatar="👤"):
+                st.write(prompt)
+                st.caption(f"_{user_msg['timestamp']}_")
             
-            # Generate AI response
-            language = st.session_state.chatbot_language
-            ai_response = self._get_ai_response(prompt, language, self.current_step)
+            # Generate and display AI response immediately
+            with st.chat_message("assistant", avatar="🤖"):
+                with st.spinner("AI Assistant is thinking..."):
+                    language = st.session_state.chatbot_language
+                    ai_response = self._get_ai_response(prompt, language, self.current_step)
+                
+                st.write(ai_response)
+                response_time = datetime.now().strftime("%H:%M")
+                st.caption(f"_{response_time}_")
+                
+                # Add AI response to chat history
+                assistant_msg = {
+                    "role": "assistant", 
+                    "content": ai_response,
+                    "timestamp": response_time
+                }
+                st.session_state.step_chat_messages[self.current_step].append(assistant_msg)
             
-            # Add AI response to chat
-            assistant_msg = {
-                "role": "assistant", 
-                "content": ai_response,
-                "timestamp": datetime.now().strftime("%H:%M")
-            }
-            st.session_state.step_chat_messages[self.current_step].append(assistant_msg)
+            # Force a rerun to show the new messages properly
+            st.rerun()
 
         # Enhanced sidebar with ChatGPT-style options
         with st.sidebar:

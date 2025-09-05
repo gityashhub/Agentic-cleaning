@@ -144,7 +144,7 @@ def main():
     
     # Add the Process Intelligence Chatbot to every page
     if st.session_state.get('data') is not None or st.session_state.get('processing_log'):
-        chatbot = ProcessIntelligenceChatbot()
+        chatbot = ProcessIntelligenceChatbot(current_page=page)
         chatbot.display_chatbot()
 
 def data_upload_page(audit):
