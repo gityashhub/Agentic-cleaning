@@ -64,7 +64,7 @@ def main():
     st.title("📊 Survey Data Processing Platform")
     st.markdown("*AI-augmented data cleaning, weighting, and automated report generation for statistical agencies*")
     
-    # Show interactive tutorial for new users
+    # Show interactive tutorial for new users (if not completed)
     UserGuidance.show_interactive_tutorial()
     
     # Initialize audit trail
@@ -75,7 +75,6 @@ def main():
     page = st.sidebar.selectbox(
         "Select Processing Step",
         [
-            "🎯 Analytics Dashboard",
             "📁 Data Upload & Schema",
             "🧹 Data Cleaning",
             "⚖️ Weight Application", 
@@ -124,11 +123,11 @@ def main():
         - Error messages provide guidance
         """)
     
+    # Add project tracking to sidebar
+    display_project_tracking_sidebar()
+    
     # Route to selected page
-    if page == "🎯 Analytics Dashboard":
-        dashboard = Dashboard()
-        dashboard.display_dashboard()
-    elif page == "📁 Data Upload & Schema":
+    if page == "📁 Data Upload & Schema":
         data_upload_page(audit)
     elif page == "🧹 Data Cleaning":
         data_cleaning_page(audit)
@@ -158,9 +157,6 @@ def data_upload_page(audit):
     if st.session_state.get('data') is not None:
         UserGuidance.show_data_quality_alerts(st.session_state.data)
     
-    # Show smart suggestions
-    UserGuidance.show_smart_suggestions('upload', st.session_state.get('data'))
-    
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -182,10 +178,11 @@ def data_upload_page(audit):
                     filename=uploaded_file.name,
                     file_size=uploaded_file.size,
                     file_type=uploaded_file.type,
-                    data_shape=data.shape
+                    data_shape=data.shape if data is not None and hasattr(data, 'shape') else (0, 0)
                 )
                 
-                st.success(f"✅ File loaded successfully! Shape: {data.shape}")
+                shape_info = data.shape if data is not None and hasattr(data, 'shape') else "Unknown"
+                st.success(f"✅ File loaded successfully! Shape: {shape_info}")
                 st.info(f"📝 Upload logged to audit trail at {pd.Timestamp.now().strftime('%H:%M:%S')}")
                 
                 # Data preview
@@ -272,8 +269,7 @@ def data_cleaning_page(audit):
         st.warning("⚠️ Please upload data first in the Data Upload page.")
         return
     
-    # Show smart suggestions for cleaning
-    UserGuidance.show_smart_suggestions('cleaning')
+    # Data cleaning interface
     
     cleaner = DataCleaner()
     
@@ -713,6 +709,66 @@ def report_generation_page(audit):
                 st.error(f"❌ Error generating report: {str(e)}")
                 with st.expander("Error Details (for debugging)"):
                     st.code(error_details)
+
+def detect_current_processing_step():
+    """Detect current processing step for step-aware chatbot."""
+    if st.session_state.get('weighted_results'):
+        return 'analysis'
+    elif st.session_state.get('cleaned_data') is not None:
+        return 'weighting'
+    elif st.session_state.get('schema'):
+        return 'cleaning'
+    elif st.session_state.get('data') is not None:
+        return 'schema'
+    else:
+        return 'upload'
+
+def display_project_tracking_sidebar():
+    """Display comprehensive project tracking in sidebar."""
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**📊 Project Tracking**")
+    
+    # Processing steps status
+    steps = [
+        ("📁 Data Upload", st.session_state.get('data') is not None),
+        ("🗂️ Schema Config", st.session_state.get('schema') is not None),
+        ("🧹 Data Cleaning", st.session_state.get('cleaned_data') is not None),
+        ("⚖️ Weight Application", st.session_state.get('weighted_results') is not None),
+        ("📄 Report Ready", False)  # Would be based on report generation
+    ]
+    
+    completed = sum(1 for _, done in steps if done)
+    progress = completed / len(steps)
+    
+    st.sidebar.progress(progress)
+    st.sidebar.write(f"**Progress: {completed}/{len(steps)} completed**")
+    
+    # Step status indicators
+    for step_name, completed_status in steps:
+        if completed_status:
+            st.sidebar.success(f"✅ {step_name}")
+        else:
+            st.sidebar.info(f"⏳ {step_name}")
+    
+    # Quick stats if data available
+    if st.session_state.get('data') is not None:
+        data = st.session_state.data
+        st.sidebar.markdown("**📈 Quick Stats**")
+        st.sidebar.metric("Records", f"{data.shape[0]:,}")
+        st.sidebar.metric("Columns", data.shape[1])
+        
+        if st.session_state.get('cleaned_data') is not None:
+            cleaned = st.session_state.cleaned_data
+            rows_removed = data.shape[0] - cleaned.shape[0]
+            st.sidebar.metric("Rows Cleaned", f"{rows_removed:,}")
+    
+    # Processing time tracking
+    if st.session_state.get('processing_log'):
+        st.sidebar.markdown("**⏱️ Recent Activity**")
+        for entry in st.session_state.processing_log[-3:]:  # Last 3 entries
+            timestamp = entry.get('timestamp', pd.Timestamp.now()).strftime('%H:%M')
+            step = entry.get('step', 'Unknown')
+            st.sidebar.write(f"• {timestamp}: {step}")
 
 def processing_log_page():
     st.header("📋 Processing Log & Audit Trail")

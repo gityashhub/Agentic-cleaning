@@ -171,36 +171,7 @@ class UserGuidance:
                         st.info("Tutorial hidden. You can always refer to the Help & Guidance in the sidebar.")
                         st.rerun()
     
-    @staticmethod
-    def show_smart_suggestions(context, data=None):
-        """Show smart suggestions based on current context."""
-        suggestions = {
-            'upload': [
-                "📈 Your dataset looks good! Consider checking for missing values in the Analytics Dashboard.",
-                "🔍 Use schema auto-detection to quickly map your data structure.",
-                "💡 Check the data quality alerts before proceeding to cleaning."
-            ],
-            'cleaning': [
-                "🎯 For survey data, KNN imputation often works better than mean/median.",
-                "📊 Review the cleaning report to understand what was changed.",
-                "✅ Validate your results by checking the before/after statistics."
-            ],
-            'weighting': [
-                "⚖️ Check weight distribution in the diagnostics before applying.",
-                "📈 Use stratified analysis to understand subgroup differences.",
-                "🎯 Consider trimming extreme weights for more stable estimates."
-            ],
-            'analysis': [
-                "📊 Start with the Analytics Dashboard for a comprehensive overview.",
-                "🔍 Use the audit trail to track all your processing steps.",
-                "📄 Generate reports to document your methodology and findings."
-            ]
-        }
-        
-        if context in suggestions:
-            with st.expander("💡 Smart Suggestions"):
-                for suggestion in suggestions[context]:
-                    st.info(suggestion)
+    # Smart suggestions feature removed as requested
     
     @staticmethod
     def show_error_recovery_help(error_type, error_message):

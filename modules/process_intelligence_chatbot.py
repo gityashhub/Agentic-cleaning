@@ -8,80 +8,113 @@ from groq import Groq
 import traceback
 
 class ProcessIntelligenceChatbot:
-    """Multilingual AI Assistant that remembers the entire data processing workflow."""
+    """Step-aware AI Assistant with proper chat interface and cross-step memory."""
     
-    def __init__(self):
+    def __init__(self, current_step=None):
+        # Current processing step awareness
+        self.current_step = current_step or self._detect_current_step()
+        
         # Initialize Groq client
         self.client = None
         self._init_groq_client()
         
-        # Initialize chat history
-        if 'chat_history' not in st.session_state:
-            st.session_state.chat_history = []
+        # Initialize step-aware chat history
+        if 'step_chat_messages' not in st.session_state:
+            st.session_state.step_chat_messages = {}
+        
+        # Ensure current step has message history
+        if self.current_step not in st.session_state.step_chat_messages:
+            st.session_state.step_chat_messages[self.current_step] = []
+        
+        # Initialize cross-step memory
+        if 'cross_step_memory' not in st.session_state:
+            st.session_state.cross_step_memory = {}
         
         # Language settings
         if 'chatbot_language' not in st.session_state:
             st.session_state.chatbot_language = 'english'
-            
-        # Context cache
-        self._context_cache = None
         
+        # Track first query per step
+        if 'step_first_query' not in st.session_state:
+            st.session_state.step_first_query = {}
+            
+        # Context cache with step awareness
+        self._context_cache = {}
+        self._step_summaries = {}
+
+    def _detect_current_step(self):
+        """Detect current processing step based on session state."""
+        if st.session_state.get('weighted_results'):
+            return 'analysis'
+        elif st.session_state.get('cleaned_data') is not None:
+            return 'weighting'
+        elif st.session_state.get('schema'):
+            return 'cleaning'
+        elif st.session_state.get('data') is not None:
+            return 'schema'
+        else:
+            return 'upload'
+    
     def _init_groq_client(self):
-        """Initialize Groq client with error handling."""
+        """Initialize Groq client with silent error handling."""
         try:
             api_key = os.getenv('GROQ_API_KEY')
             if api_key:
                 self.client = Groq(api_key=api_key)
             else:
-                st.error("⚠️ Groq API key not found. Chatbot will use fallback responses.")
-        except Exception as e:
-            st.error(f"⚠️ Could not initialize AI client: {str(e)}")
-            self.client = None
-    
-    def _get_processing_context(self):
-        """Extract comprehensive processing context from session state."""
-        if self._context_cache:
-            return self._context_cache
+                self.client = None  # Will use fallback responses
+        except Exception:
+            self.client = None  # Silent fallback
+
+    def _get_step_context(self, step=None):
+        """Get context specific to a processing step."""
+        target_step = step or self.current_step
+        
+        if target_step in self._context_cache:
+            return self._context_cache[target_step]
             
         context = {
+            'step': target_step,
             'data_info': {},
-            'processing_steps': [],
-            'quality_metrics': {},
-            'current_state': 'initial',
-            'audit_trail': [],
+            'step_status': 'pending',
+            'previous_steps': [],
+            'next_steps': [],
             'recommendations': []
         }
         
         try:
-            # Data information
+            # Data information with safe handling
             if st.session_state.get('data') is not None:
                 data = st.session_state.data
-                context['data_info'] = {
-                    'total_rows': int(data.shape[0]),
-                    'total_columns': int(data.shape[1]),
-                    'missing_values': int(data.isnull().sum().sum()),
-                    'missing_percentage': float((data.isnull().sum().sum() / (data.shape[0] * data.shape[1])) * 100),
-                    'numeric_columns': int(len(data.select_dtypes(include=[np.number]).columns)),
-                    'categorical_columns': int(len(data.select_dtypes(include=['object']).columns)),
-                    'duplicates': int(data.duplicated().sum()) if hasattr(data, 'duplicated') else 0
-                }
-                context['current_state'] = 'data_uploaded'
+                if data is not None and hasattr(data, 'shape'):
+                    context['data_info'] = {
+                        'total_rows': int(data.shape[0]),
+                        'total_columns': int(data.shape[1]),
+                        'missing_values': int(data.isnull().sum().sum()),
+                        'missing_percentage': float((data.isnull().sum().sum() / (data.shape[0] * data.shape[1])) * 100),
+                        'numeric_columns': int(len(data.select_dtypes(include=[np.number]).columns)),
+                        'categorical_columns': int(len(data.select_dtypes(include=['object']).columns)),
+                        'duplicates': int(data.duplicated().sum()) if hasattr(data, 'duplicated') else 0
+                    }
+                    context['step_status'] = 'completed' if target_step == 'upload' else 'available'
             
-            # Cleaned data information
+            # Cleaned data information with safe handling
             if st.session_state.get('cleaned_data') is not None:
                 cleaned = st.session_state.cleaned_data
-                original_rows = context['data_info'].get('total_rows', 0)
-                rows_removed = original_rows - cleaned.shape[0] if original_rows > 0 else 0
-                
-                context['cleaning_results'] = {
-                    'rows_after_cleaning': int(cleaned.shape[0]),
-                    'rows_removed': int(rows_removed),
-                    'removal_percentage': float((rows_removed / original_rows * 100)) if original_rows > 0 else 0,
-                    'remaining_missing': int(cleaned.isnull().sum().sum()),
-                    'quality_improvement': 'significant' if rows_removed > 0 else 'minimal'
-                }
-                context['current_state'] = 'data_cleaned'
-            
+                if cleaned is not None and hasattr(cleaned, 'shape'):
+                    original_rows = context['data_info'].get('total_rows', 0)
+                    rows_removed = original_rows - cleaned.shape[0] if original_rows > 0 else 0
+                    
+                    context['cleaning_results'] = {
+                        'rows_after_cleaning': int(cleaned.shape[0]),
+                        'rows_removed': int(rows_removed),
+                        'removal_percentage': float((rows_removed / original_rows * 100)) if original_rows > 0 else 0,
+                        'remaining_missing': int(cleaned.isnull().sum().sum()),
+                        'quality_improvement': 'significant' if rows_removed > 0 else 'minimal'
+                    }
+                    if target_step == 'cleaning':
+                        context['step_status'] = 'completed'
+
             # Weighted results
             if st.session_state.get('weighted_results') is not None:
                 results = st.session_state.weighted_results
@@ -90,133 +123,142 @@ class ProcessIntelligenceChatbot:
                     'analysis_completed': True,
                     'statistical_results': 'available'
                 }
-                context['current_state'] = 'analysis_complete'
+                if target_step in ['weighting', 'analysis']:
+                    context['step_status'] = 'completed'
             
-            # Processing log
+            # Processing log with step awareness
             if st.session_state.get('processing_log'):
-                context['processing_steps'] = [
-                    {
-                        'step': entry.get('step', 'Unknown'),
-                        'timestamp': entry.get('timestamp', datetime.now()).strftime('%H:%M:%S'),
-                        'config': entry.get('config', {}),
-                        'success': True
-                    }
+                context['previous_steps'] = [
+                    entry.get('step', 'Unknown')
                     for entry in st.session_state.processing_log
                 ]
             
-            # Audit trail
-            if st.session_state.get('audit_log'):
-                context['audit_trail'] = [
-                    {
-                        'action': entry.get('action_type', 'Unknown'),
-                        'timestamp': entry.get('timestamp', ''),
-                        'details': entry.get('details', '')
-                    }
-                    for entry in st.session_state.audit_log[-10:]  # Last 10 entries
-                ]
+            # Build step summary for cross-step memory
+            self._build_step_summary(target_step, context)
                 
         except Exception as e:
             # Graceful fallback
             context['error'] = f"Context extraction error: {str(e)}"
             
-        self._context_cache = context
+        self._context_cache[target_step] = context
         return context
     
-    def _create_system_prompt(self, language):
-        """Create system prompt for the AI based on language."""
+    def _build_step_summary(self, step, context):
+        """Build compact summary for cross-step memory."""
+        summary = {'step': step, 'completed': context.get('step_status') == 'completed'}
+        
+        if step == 'upload' and context.get('data_info'):
+            summary['summary'] = f"Uploaded {context['data_info']['total_rows']} rows, {context['data_info']['total_columns']} columns"
+        elif step == 'cleaning' and context.get('cleaning_results'):
+            summary['summary'] = f"Cleaned data: {context['cleaning_results']['rows_removed']} rows removed"
+        elif step == 'weighting' and context.get('weighting_info'):
+            summary['summary'] = "Applied survey weights and calculated statistics"
+        else:
+            summary['summary'] = f"Step {step} in progress"
+        
+        st.session_state.cross_step_memory[step] = summary
+
+    def _create_system_prompt(self, language, current_step):
+        """Create step-aware system prompt for the AI based on language and current step."""
+        step_context = {
+            'upload': 'data upload and initial review',
+            'schema': 'data schema configuration',
+            'cleaning': 'data cleaning and validation',
+            'weighting': 'survey weight application',
+            'analysis': 'data analysis and visualization'
+        }
+        
+        current_context = step_context.get(current_step, 'data processing')
+        
         prompts = {
-            'english': """You are a Process Intelligence Assistant for a Survey Data Processing Platform. You have complete memory of all data processing steps performed by the user. 
+            'english': f"""You are a Step-Aware Process Intelligence Assistant for a Survey Data Processing Platform. 
+
+CURRENT STEP: {current_step.upper()} - {current_context}
 
 Your role is to:
-1. Explain what was done during data processing in clear, conversational language
-2. Assess data quality and processing effectiveness  
-3. Suggest improvements and optimizations
-4. Answer questions about methodology and results
-5. Provide actionable insights
+1. PRIORITIZE the current step ({current_step}) in your responses
+2. Remember and reference previous completed steps when relevant
+3. Provide step-specific guidance and insights
+4. Answer questions about methodology and results across all steps
+5. Give actionable, step-appropriate suggestions
 
-Always respond in a helpful, professional tone. Be specific about numbers, percentages, and technical details when relevant. If asked about improvements, provide concrete suggestions.""",
+Always acknowledge the current processing step and provide contextual help. Be conversational, specific with numbers, and reference cross-step information when asked.""",
 
-            'hindi': """आप एक Survey Data Processing Platform के लिए Process Intelligence Assistant हैं। आपके पास user द्वारा किए गए सभी data processing steps की complete memory है।
+            'hindi': f"""आप एक Step-Aware Survey Data Processing Platform के लिए Process Intelligence Assistant हैं।
+
+वर्तमान चरण: {current_step.upper()} - {current_context}
 
 आपकी भूमिका है:
-1. Data processing के दौरान क्या किया गया, उसे clear और conversational language में explain करना
-2. Data quality और processing effectiveness का assessment करना
-3. Improvements और optimizations suggest करना  
-4. Methodology और results के बारे में questions का answer देना
-5. Actionable insights provide करना
+1. वर्तमान चरण ({current_step}) को प्राथमिकता दें
+2. पिछले completed steps को याद रखें और reference करें
+3. Step-specific guidance और insights प्रदान करें
+4. सभी steps के methodology और results के questions का answer दें
+5. Actionable, step-appropriate suggestions दें
 
-हमेशा helpful और professional tone में respond करें। Numbers, percentages और technical details के साथ specific रहें। अगर improvements के बारे में पूछा जाए तो concrete suggestions दें।""",
+हमेशा current processing step को acknowledge करें और contextual help प्रदान करें।""",
 
-            'gujarati': """તમે Survey Data Processing Platform માટે Process Intelligence Assistant છો. તમારી પાસે user દ્વારા કરવામાં આવેલા તમામ data processing steps ની complete memory છે.
+            'gujarati': f"""તમે Step-Aware Survey Data Processing Platform માટે Process Intelligence Assistant છો.
+
+હાલનું પગલું: {current_step.upper()} - {current_context}
 
 તમારી ભૂમિકા છે:
-1. Data processing દરમિયાન શું કરવામાં આવ્યું તે clear અને conversational language માં explain કરવું
-2. Data quality અને processing effectiveness નું assessment કરવું
-3. Improvements અને optimizations suggest કરવા
-4. Methodology અને results વિશે questions નો answer આપવો
-5. Actionable insights provide કરવા
+1. હાલના પગલા ({current_step}) ને પ્રાથમિકતા આપો
+2. પહેલાના completed steps ને યાદ રાખો અને reference કરો
+3. Step-specific guidance અને insights આપો
+4. બધા steps ના methodology અને results વિશે questions નો answer આપો
+5. Actionable, step-appropriate suggestions આપો
 
-હંમેશા helpful અને professional tone માં respond કરો. Numbers, percentages અને technical details સાથે specific રહો. જો improvements વિશે પૂછવામાં આવે તો concrete suggestions આપો."""
+હંમેશા current processing step ને acknowledge કરો અને contextual help આપો."""
         }
         
         return prompts.get(language, prompts['english'])
     
-    def _get_fallback_response(self, user_message, language):
-        """Provide fallback responses when AI is unavailable."""
-        context = self._get_processing_context()
+    def _get_fallback_response(self, user_message, language, current_step):
+        """Provide step-aware fallback responses when AI is unavailable."""
+        context = self._get_step_context(current_step)
         
         fallback_responses = {
             'english': {
-                'summary': f"Your dataset has {context['data_info'].get('total_rows', 0)} rows and {context['data_info'].get('total_columns', 0)} columns. Current processing state: {context['current_state'].replace('_', ' ').title()}.",
-                'quality': f"Data quality metrics: {context['data_info'].get('missing_percentage', 0):.1f}% missing values, {context['data_info'].get('duplicates', 0)} duplicates found.",
-                'help': "I can help you understand your data processing workflow. Try asking specific questions about cleaning, weighting, or analysis results.",
-                'default': "I'm here to help with your survey data processing. What would you like to know about your data or the processing steps?"
+                'upload': f"I'm here to help with data upload. Current status: {context.get('step_status', 'pending')}. What would you like to know about uploading your survey data?",
+                'schema': f"I can help with schema configuration. Your data has {context['data_info'].get('total_columns', 0)} columns. Need help mapping your data structure?",
+                'cleaning': f"I'm assisting with data cleaning. Your dataset has {context['data_info'].get('missing_percentage', 0):.1f}% missing values. What cleaning questions do you have?",
+                'weighting': f"I can help with survey weighting. Your cleaned data has {context.get('cleaning_results', {}).get('rows_after_cleaning', 0)} rows. Ready for weight application?",
+                'analysis': f"I'm here for analysis support. All processing steps are complete. What would you like to analyze or understand about your results?"
             },
             'hindi': {
-                'summary': f"आपके dataset में {context['data_info'].get('total_rows', 0)} rows और {context['data_info'].get('total_columns', 0)} columns हैं। Current processing state: {context['current_state'].replace('_', ' ').title()}।",
-                'quality': f"Data quality metrics: {context['data_info'].get('missing_percentage', 0):.1f}% missing values, {context['data_info'].get('duplicates', 0)} duplicates मिले।",
-                'help': "मैं आपके data processing workflow को समझने में help कर सकता हूं। Cleaning, weighting, या analysis results के बारे में specific questions पूछें।",
-                'default': "मैं आपके survey data processing में help के लिए यहां हूं। आपको अपने data या processing steps के बारे में क्या जानना है?"
+                'upload': f"मैं data upload में help के लिए हूं। Current status: {context.get('step_status', 'pending')}। Survey data upload के बारे में क्या जानना है?",
+                'schema': f"मैं schema configuration में help कर सकता हूं। आपके data में {context['data_info'].get('total_columns', 0)} columns हैं। Data structure mapping में help चाहिए?",
+                'cleaning': f"मैं data cleaning में help कर रहा हूं। आपके dataset में {context['data_info'].get('missing_percentage', 0):.1f}% missing values हैं। Cleaning के बारे में क्या questions हैं?",
+                'weighting': f"मैं survey weighting में help कर सकता हूं। आपके cleaned data में {context.get('cleaning_results', {}).get('rows_after_cleaning', 0)} rows हैं। Weight application के लिए ready हैं?",
+                'analysis': f"मैं analysis support के लिए हूं। सभी processing steps complete हैं। Results के बारे में क्या analyze करना चाहते हैं?"
             },
             'gujarati': {
-                'summary': f"તમારા dataset માં {context['data_info'].get('total_rows', 0)} rows અને {context['data_info'].get('total_columns', 0)} columns છે. Current processing state: {context['current_state'].replace('_', ' ').title()}.",
-                'quality': f"Data quality metrics: {context['data_info'].get('missing_percentage', 0):.1f}% missing values, {context['data_info'].get('duplicates', 0)} duplicates મળ્યા.",
-                'help': "હું તમારા data processing workflow ને સમજવામાં help કરી શકું છું. Cleaning, weighting, અથવા analysis results વિશે specific questions પૂછો.",
-                'default': "હું તમારા survey data processing માં help માટે અહીં છું. તમને તમારા data અથવા processing steps વિશે શું જાણવું છે?"
+                'upload': f"હું data upload માં help માટે છું। Current status: {context.get('step_status', 'pending')}. Survey data upload વિશે શું જાણવું છે?",
+                'schema': f"હું schema configuration માં help કરી શકું છું। તમારા data માં {context['data_info'].get('total_columns', 0)} columns છે। Data structure mapping માં help જોઈએ?",
+                'cleaning': f"હું data cleaning માં help કરી રહ્યો છું। તમારા dataset માં {context['data_info'].get('missing_percentage', 0):.1f}% missing values છે। Cleaning વિશે શું questions છે?",
+                'weighting': f"હું survey weighting માં help કરી શકું છું। તમારા cleaned data માં {context.get('cleaning_results', {}).get('rows_after_cleaning', 0)} rows છે। Weight application માટે ready છો?",
+                'analysis': f"હું analysis support માટે છું। બધા processing steps complete છે। Results વિશે શું analyze કરવું છે?"
             }
         }
         
         responses = fallback_responses.get(language, fallback_responses['english'])
-        
-        # Determine response type based on message content
-        message_lower = user_message.lower()
-        
-        if any(word in message_lower for word in ['what', 'શું', 'क्या', 'summary', 'done', 'किया', 'કર્યું']):
-            return responses['summary']
-        elif any(word in message_lower for word in ['quality', 'problem', 'issue', 'समस्या', 'પ્રોબ્લેમ']):
-            return responses['quality']
-        elif any(word in message_lower for word in ['help', 'how', 'कैसे', 'કેવી']):
-            return responses['help']
-        else:
-            return responses['default']
+        return responses.get(current_step, responses['upload'])
     
-    def _get_ai_response(self, user_message, language):
+    def _get_ai_response(self, user_message, language, current_step):
         """Get response from Groq AI with comprehensive error handling."""
         if not self.client:
-            return self._get_fallback_response(user_message, language)
+            return self._get_fallback_response(user_message, language, current_step)
         
         try:
-            context = self._get_processing_context()
-            system_prompt = self._create_system_prompt(language)
+            context = self._get_step_context(current_step)
+            system_prompt = self._create_system_prompt(language, current_step)
             
-            # Create context string
+            # Create compact context string to avoid token limits
             context_str = f"""
-            Current Processing Context:
-            - Data Info: {json.dumps(context.get('data_info', {}), indent=2)}
-            - Processing State: {context.get('current_state', 'unknown')}
-            - Processing Steps: {json.dumps(context.get('processing_steps', []), indent=2)}
-            - Cleaning Results: {json.dumps(context.get('cleaning_results', {}), indent=2)}
-            - Weighting Info: {json.dumps(context.get('weighting_info', {}), indent=2)}
+            Step: {current_step}
+            Status: {context.get('step_status', 'pending')}
+            Data: {context.get('data_info', {})}
+            Previous Steps: {list(st.session_state.cross_step_memory.keys())}
             """
             
             # Prepare messages for Groq
@@ -229,7 +271,7 @@ Always respond in a helpful, professional tone. Be specific about numbers, perce
             response = self.client.chat.completions.create(
                 model="llama-3.1-8b-instant",  # Fastest model for better performance
                 messages=messages,
-                max_tokens=800,  # Reduced for faster responses
+                max_tokens=400,  # Reduced for faster responses
                 temperature=0.6,
                 timeout=8  # 8 second timeout for faster response
             )
@@ -238,20 +280,96 @@ Always respond in a helpful, professional tone. Be specific about numbers, perce
             
         except Exception as e:
             # Log error and provide fallback
-            error_msg = f"AI service temporarily unavailable: {str(e)}"
-            st.warning(f"⚠️ {error_msg}")
-            return self._get_fallback_response(user_message, language)
-    
+            return self._get_fallback_response(user_message, language, current_step)
+
     def display_chatbot(self):
-        """Display the Process Intelligence Chatbot interface."""
+        """Display the Step-Aware Process Intelligence Chatbot interface."""
         st.markdown("---")
-        st.subheader("🤖 Process Intelligence Assistant")
-        st.markdown("*Ask me anything about your data processing workflow in English, Hindi, or Gujarati*")
         
-        # Language selector and status
-        col1, col2 = st.columns([3, 1])
+        # Update current step
+        self.current_step = self._detect_current_step()
         
-        with col2:
+        # Ensure current step has message history
+        if self.current_step not in st.session_state.step_chat_messages:
+            st.session_state.step_chat_messages[self.current_step] = []
+        
+        # Header with step awareness
+        step_names = {
+            'upload': '📁 Data Upload',
+            'schema': '🗂️ Schema Setup', 
+            'cleaning': '🧹 Data Cleaning',
+            'weighting': '⚖️ Weight Application',
+            'analysis': '📈 Analysis & Visualization'
+        }
+        
+        current_step_name = step_names.get(self.current_step, self.current_step.title())
+        st.subheader(f"🤖 Process Assistant - {current_step_name}")
+        
+        # Step-aware welcome message for first query
+        if self.current_step not in st.session_state.step_first_query:
+            welcome_messages = {
+                'english': {
+                    'upload': "👋 Welcome! I'm here to help you upload and review your survey data. What would you like to know?",
+                    'schema': "🗂️ Great! Now I can help you configure your data schema. Any questions about your data structure?", 
+                    'cleaning': "🧹 Perfect! I'm ready to assist with data cleaning. What cleaning questions do you have?",
+                    'weighting': "⚖️ Excellent! I can help you apply survey weights. Ready to discuss weighting strategies?",
+                    'analysis': "📈 Fantastic! All steps are complete. I can help you understand and analyze your results."
+                }
+            }
+            
+            language = st.session_state.chatbot_language
+            welcome_msg = welcome_messages.get(language, welcome_messages['english']).get(self.current_step, "Hello! How can I help you?")
+            
+            # Add welcome message to chat
+            st.session_state.step_chat_messages[self.current_step].append({
+                "role": "assistant", 
+                "content": welcome_msg,
+                "timestamp": datetime.now().strftime("%H:%M")
+            })
+            st.session_state.step_first_query[self.current_step] = True
+
+        # Display chat messages using streamlit chat UI
+        for message in st.session_state.step_chat_messages[self.current_step]:
+            with st.chat_message(message["role"]):
+                st.write(message["content"])
+                st.caption(f"⏰ {message['timestamp']}")
+
+        # Chat input
+        if prompt := st.chat_input(f"Ask about {current_step_name.lower()}..."):
+            # Add user message to chat
+            user_msg = {
+                "role": "user", 
+                "content": prompt,
+                "timestamp": datetime.now().strftime("%H:%M")
+            }
+            st.session_state.step_chat_messages[self.current_step].append(user_msg)
+            
+            # Display user message
+            with st.chat_message("user"):
+                st.write(prompt)
+                st.caption(f"⏰ {user_msg['timestamp']}")
+
+            # Generate AI response
+            with st.chat_message("assistant"):
+                with st.spinner("🤔 Thinking..."):
+                    language = st.session_state.chatbot_language
+                    ai_response = self._get_ai_response(prompt, language, self.current_step)
+                
+                st.write(ai_response)
+                timestamp = datetime.now().strftime("%H:%M")
+                st.caption(f"⏰ {timestamp}")
+                
+                # Add AI response to chat
+                assistant_msg = {
+                    "role": "assistant", 
+                    "content": ai_response,
+                    "timestamp": timestamp
+                }
+                st.session_state.step_chat_messages[self.current_step].append(assistant_msg)
+
+        # Language selector in sidebar
+        with st.sidebar:
+            st.markdown("**🌐 Chat Language**")
             language_options = {
                 'English': 'english',
                 'हिन्दी': 'hindi', 
@@ -259,137 +377,23 @@ Always respond in a helpful, professional tone. Be specific about numbers, perce
             }
             
             selected_lang = st.selectbox(
-                "Language / भाषा / ભાષા",
+                "Language",
                 options=list(language_options.keys()),
-                index=list(language_options.values()).index(st.session_state.chatbot_language)
+                index=list(language_options.values()).index(st.session_state.chatbot_language),
+                key="chatbot_language_selector"
             )
             st.session_state.chatbot_language = language_options[selected_lang]
-        
-        with col1:
-            # Processing status summary
-            context = self._get_processing_context()
-            status_text = self._get_status_summary(context, st.session_state.chatbot_language)
-            st.markdown(f"**📊 Current Status:** {status_text}")
-        
-        # Chat interface
-        st.markdown("**💬 Chat with Your Processing Assistant:**")
-        
-        # Display chat history (last 6 messages for performance)
-        if st.session_state.chat_history:
-            with st.container():
-                chat_display = st.session_state.chat_history[-6:]  # Limit for performance
-                for i, (role, message, timestamp, lang) in enumerate(chat_display):
-                    if role == "user":
-                        st.markdown(f"**👤 You ({timestamp}):** {message}")
-                    else:
-                        st.markdown(f"**🤖 Assistant ({timestamp}):** {message}")
-                    
-                    # Add separator for readability
-                    if i < len(chat_display) - 1:
-                        st.markdown("---")
-        
-        # Chat input with language-appropriate placeholder
-        placeholders = {
-            'english': "Ask me: What did you do to my data?",
-            'hindi': "मुझसे पूछें: मेरे डेटा के साथ क्या किया गया?",
-            'gujarati': "મને પૂછો: મારા ડેટા સાથે શું કર્યું?"
-        }
-        
-        user_input = st.text_input(
-            "Ask about your data processing:",
-            placeholder=placeholders.get(st.session_state.chatbot_language, placeholders['english']),
-            key="chatbot_input"
-        )
-        
-        # Process user input
-        if user_input:
-            self._process_user_message(user_input)
-            st.rerun()
-        
-        # Quick action buttons
-        self._display_quick_actions()
-        
+
+        # Cross-step navigation in sidebar
+        with st.sidebar:
+            st.markdown("**📋 Step History**")
+            for step, summary in st.session_state.cross_step_memory.items():
+                status_icon = "✅" if summary['completed'] else "⏳"
+                st.write(f"{status_icon} **{step.title()}**: {summary['summary']}")
+
         # Clear chat option
-        if st.button("🗑️ Clear Chat History"):
-            st.session_state.chat_history = []
-            self._context_cache = None  # Reset context cache
+        if st.button("🗑️ Clear Current Step Chat", key="clear_step_chat"):
+            st.session_state.step_chat_messages[self.current_step] = []
+            if self.current_step in st.session_state.step_first_query:
+                del st.session_state.step_first_query[self.current_step]
             st.rerun()
-    
-    def _process_user_message(self, user_message):
-        """Process user message and generate AI response."""
-        timestamp = datetime.now().strftime("%H:%M")
-        language = st.session_state.chatbot_language
-        
-        # Add user message to history
-        st.session_state.chat_history.append(("user", user_message, timestamp, language))
-        
-        # Generate AI response
-        with st.spinner("🤔 Thinking..."):
-            ai_response = self._get_ai_response(user_message, language)
-        
-        # Add AI response to history
-        st.session_state.chat_history.append(("assistant", ai_response, timestamp, language))
-        
-        # Clear context cache to get fresh data on next request
-        self._context_cache = None
-    
-    def _get_status_summary(self, context, language):
-        """Get status summary in specified language."""
-        summaries = {
-            'english': {
-                'initial': "No data uploaded yet",
-                'data_uploaded': f"{context['data_info'].get('total_rows', 0)} rows uploaded",
-                'data_cleaned': f"Data cleaned, {context.get('cleaning_results', {}).get('rows_after_cleaning', 0)} rows remaining",
-                'analysis_complete': "Full analysis completed with weights applied"
-            },
-            'hindi': {
-                'initial': "अभी तक कोई डेटा upload नहीं हुआ",
-                'data_uploaded': f"{context['data_info'].get('total_rows', 0)} rows upload हुए",
-                'data_cleaned': f"डेटा clean हुआ, {context.get('cleaning_results', {}).get('rows_after_cleaning', 0)} rows बचे",
-                'analysis_complete': "Weights के साथ पूरा analysis complete हुआ"
-            },
-            'gujarati': {
-                'initial': "હજુ સુધી કોઈ ડેટા upload થયો નથી",
-                'data_uploaded': f"{context['data_info'].get('total_rows', 0)} rows upload થયા",
-                'data_cleaned': f"ડેટા clean થયો, {context.get('cleaning_results', {}).get('rows_after_cleaning', 0)} rows બાકી",
-                'analysis_complete': "Weights સાથે પૂરો analysis complete થયો"
-            }
-        }
-        
-        state = context.get('current_state', 'initial')
-        return summaries.get(language, summaries['english']).get(state, state)
-    
-    def _display_quick_actions(self):
-        """Display quick action buttons for common queries."""
-        st.markdown("**🚀 Quick Questions:**")
-        
-        # Language-specific quick actions
-        if st.session_state.chatbot_language == 'english':
-            actions = [
-                ("📊 What was done?", "What data processing steps were performed on my dataset?"),
-                ("❓ Any problems?", "Are there any data quality issues or problems I should know about?"),
-                ("💡 Improvements?", "What improvements or optimizations do you recommend?"),
-                ("📈 How accurate?", "How accurate and reliable are my analysis results?")
-            ]
-        elif st.session_state.chatbot_language == 'hindi':
-            actions = [
-                ("📊 क्या किया गया?", "मेरे dataset पर कौन से data processing steps किए गए?"),
-                ("❓ कोई समस्या?", "क्या कोई data quality issues या problems हैं जिनके बारे में मुझे पता होना चाहिए?"),
-                ("💡 सुधार?", "आप कौन से improvements या optimizations recommend करते हैं?"),
-                ("📈 कितना सटीक?", "मेरे analysis results कितने accurate और reliable हैं?")
-            ]
-        else:  # gujarati
-            actions = [
-                ("📊 શું કર્યું?", "મારા dataset પર કયા data processing steps કરવામાં આવ્યા?"),
-                ("❓ કોઈ સમસ્યા?", "શું કોઈ data quality issues અથવા problems છે જેની મને જાણકારી હોવી જોઈએ?"),
-                ("💡 સુધારા?", "તમે કયા improvements અથવા optimizations recommend કરો છો?"),
-                ("📈 કેટલું accurate?", "મારા analysis results કેટલા accurate અને reliable છે?")
-            ]
-        
-        # Display buttons in a grid
-        cols = st.columns(2)
-        for i, (button_text, question) in enumerate(actions):
-            with cols[i % 2]:
-                if st.button(button_text, key=f"quick_action_{i}"):
-                    self._process_user_message(question)
-                    st.rerun()

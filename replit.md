@@ -75,13 +75,16 @@ The application follows a modular structure:
 - Data handling (openpyxl, chardet)
 
 ## Recent Changes
-- **2025-09-05**: Project imported from GitHub and configured for Replit environment
-  - Installed Python 3.11 and all required dependencies (streamlit, pandas, numpy, scipy, etc.)
-  - Fixed Streamlit configuration for Replit proxy environment with CORS and XSRF disabled
-  - Updated .streamlit/config.toml with proper server settings (port 5000, address 0.0.0.0)
-  - Set up development workflow running Streamlit on port 5000 with proxy support
-  - Configured autoscale deployment target for production
-  - Verified application functionality and server responsiveness
+- **2025-09-05**: Major platform improvements and complete chatbot overhaul
+  - **Chatbot Refactored**: Completely rewrote chatbot with proper st.chat_input/st.chat_message interface
+  - **Step-Aware Intelligence**: Chatbot now has step awareness and cross-step memory functionality
+  - **UI Improvements**: Enhanced user interface clarity with better progress indicators and readiness status
+  - **Navigation Changes**: Removed analytics dashboard from starting page, defaulting to Data Upload & Schema
+  - **Project Tracking**: Added comprehensive project tracking system to sidebar with progress indicators
+  - **Smart Suggestions Removed**: Removed smart suggestions feature as requested by user
+  - **Error Handling**: Fixed all LSP diagnostic errors and improved error handling throughout
+  - **GROQ API**: Made chatbot work properly with fallback responses when API key is not available
+  - **Safe Data Access**: Implemented safe data shape access to prevent runtime errors
 
 ## User Preferences
 - No specific preferences recorded yet

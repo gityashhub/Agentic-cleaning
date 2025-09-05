@@ -1,0 +1,42 @@
+You are helping me design a step-aware chatbot for a Streamlit survey data processing app.
+
+### Current Situation
+- The chatbot currently repeats answers because Streamlit reruns the script after every input, and st.text_input keeps the last query.
+- It is not step-aware: it cannot prioritize the current step (e.g., Data Cleaning, Weighting, Report Generation).
+- It sometimes dumps too much context (schema, logs, full JSON), causing token limit issues.
+- The UI is basic, using st.text_input instead of the chat-style interface.
+
+### Goals
+1. **Proper Chat UI**
+   - Use st.chat_input and st.chat_message so messages appear as a conversation.
+   - Each query goes into the chat history below, and a new input field appears automatically.
+   - Prevent duplicate or repeated responses after reruns.
+
+2. **Step Awareness**
+   - At every step of the pipeline (Upload, Cleaning, Weighting, Analysis, Report, etc.), the chatbot should know the current step (`current_step` variable).
+   - The first query at a step should acknowledge that step.
+   - All subsequent queries at that step should stay in the same chat history section.
+
+3. **Cross-Step Memory**
+   - The chatbot should remember all previous steps.
+   - Example: At Report Generation step, if I ask about Cleaning, it should recall what was done in Cleaning and respond correctly.
+
+4. **Context Management**
+   - Store compact summaries per step (e.g., number of rows after cleaning, weights applied, log entries).
+   - Provide the chatbot with the current step’s summary plus all previous step summaries.
+   - Keep total context within token limits by truncating or summarizing logs/schema.
+
+5. **System Prompt**
+   - The system prompt should always prioritize the current step in answers.
+   - It may reference earlier steps if the user asks.
+
+### Deliverable
+Refactor my chatbot class so that:
+- It uses st.chat_input and st.chat_message for a proper chat interface.
+- It records the first query per step and appends all queries/responses to chat history.
+- It is step-aware and remembers all previous steps, enabling cross-step questions.
+- It avoids duplicate answers and runaway loops.
+- It builds a compact context string of all step summaries + recent logs.
+- It works even if no API key is available (fallback responses).
+
+Provide me with clean, production-ready Streamlit code that I can directly replace in my project.
