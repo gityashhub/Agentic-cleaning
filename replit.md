@@ -69,12 +69,26 @@ The application follows a modular structure:
 ## Technical Requirements
 - Python 3.11+
 - Streamlit ≥1.49.1
+- Google Generative AI ≥0.8.5 (Gemini API integration)
 - Scientific computing stack (pandas, numpy, scipy, scikit-learn)
 - Visualization libraries (plotly, seaborn, matplotlib)
 - Report generation (reportlab)
 - Data handling (openpyxl, chardet)
+- Environment variable: GEMINI_API_KEY (for AI chatbot functionality)
 
 ## Recent Changes
+- **2025-09-06**: Complete chatbot replacement with Google Gemini integration
+  - **Gemini Integration**: Replaced GROQ chatbot with Google Gemini API for enhanced accuracy and reasoning
+  - **Intelligent Memory System**: Implemented step-wise memory management with cross-step context continuity
+  - **Context Pruning**: Added intelligent token management and context pruning for Gemini free tier efficiency
+  - **Structured Prompts**: Created sophisticated prompt templates with system instructions and memory integration
+  - **Fallback Mechanisms**: Built comprehensive error handling and fallback responses for connectivity issues
+  - **Enhanced UI**: Redesigned chatbot interface with memory indicators and step context display
+  - **Security**: Implemented secure API key management through environment variables
+  - **Token Optimization**: Added intelligent context pruning to stay within Gemini's token limits
+  - **Validation**: Built query validation and clarification system to handle ambiguous requests
+  - **Export Features**: Added comprehensive chat history export with full context and memory data
+
 - **2025-09-05**: Major platform improvements and complete chatbot overhaul
   - **Chatbot Refactored**: Completely rewrote chatbot with proper st.chat_input/st.chat_message interface
   - **Step-Aware Intelligence**: Chatbot now has step awareness and cross-step memory functionality
