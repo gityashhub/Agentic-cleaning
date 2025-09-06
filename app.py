@@ -10,7 +10,7 @@ from modules.schema_validator import SchemaValidator
 from modules.audit_trail import AuditTrail
 from modules.dashboard import Dashboard
 from modules.user_guidance import UserGuidance
-from modules.process_intelligence_chatbot import ProcessIntelligenceChatbot
+from modules.gemini_chatbot import GeminiChatbot
 import json
 
 # Page configuration
@@ -144,7 +144,7 @@ def main():
     
     # Add the Process Intelligence Chatbot to every page
     if st.session_state.get('data') is not None or st.session_state.get('processing_log'):
-        chatbot = ProcessIntelligenceChatbot(current_page=page)
+        chatbot = GeminiChatbot(current_page=page)
         chatbot.display_chatbot()
 
 def data_upload_page(audit):
