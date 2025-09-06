@@ -57,3 +57,4 @@ streamlit
 groq
 openpyxl
 reportlab
+google-generativeai

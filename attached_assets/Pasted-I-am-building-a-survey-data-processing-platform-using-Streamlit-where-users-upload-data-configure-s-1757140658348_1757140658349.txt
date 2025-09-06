@@ -1,0 +1,38 @@
+I am building a survey data processing platform using Streamlit where users upload data, configure schemas, clean data, apply weights, analyze results, visualize insights, and generate reports.
+
+Currently, I am using Groq API and Hugging Face’s llama-3.1-8b-instant model to integrate a chatbot at each step separately. Now, I want to replace this with a **central, intelligent chatbot** using **Google Gemini API’s free tier**, focusing on accuracy, context-awareness, reasoning, and efficient token usage.
+
+The chatbot must:
+
+1. Answer user queries accurately and relevantly based on structured prompts that include the current step’s details and memory summaries from all previous steps.
+2. Summarize and store key information from each step — such as cleaned data statistics, weight configurations, or analysis results — in session state or a database to maintain memory across steps.
+3. Dynamically include relevant past summaries while pruning unnecessary details to stay within Gemini’s token limit without losing essential context.
+4. Provide reasoning-based, clear, and helpful explanations aligned with the actual project data and user interactions.
+5. Ask follow-up or clarifying questions if user queries are vague, incomplete, or ambiguous.
+6. Offer fallback suggestions or cached responses if API calls fail or token limits are exceeded, optionally using open-source models as needed.
+7. Securely manage the Gemini API key using environment variables, ensuring sensitive data is never exposed unnecessarily.
+8. Present the chatbot in a clean, user-friendly UI accessible across all pages via a sidebar or floating button, with scrollable past interactions and clear navigation.
+9. Optimize API usage by selecting and pruning summaries intelligently, avoiding unnecessary token consumption.
+10. Ensure that the chatbot is scalable, maintainable, and easy to test, debug, and improve over time.
+
+Important setup instructions:
+
+✔ Configure the Gemini API integration during the project setup phase only.  
+✔ Prompt me to enter the API key once during the environment setup and store it securely in environment variables.  
+✔ Do not ask for the API key repeatedly during development or runtime unless there is a missing configuration or error.  
+✔ Use structured prompts, memory management, and error handling from the beginning so that the chatbot is fully integrated with the platform as a central tool.
+
+Please help me implement this by:
+
+✔ Designing how to collect, summarize, and store step-wise information relevant to answering queries  
+✔ Writing structured prompts with system instructions and memory context that guide Gemini’s reasoning  
+✔ Showing how to retrieve and prune past summaries for token efficiency while preserving critical context  
+✔ Providing sample Gemini API call code with proper error handling, token management, and fallback mechanisms  
+✔ Offering techniques to validate user queries, ask clarifying questions, and avoid hallucinations  
+✔ Designing a clean, intuitive, and accessible UI that displays past interactions and integrates smoothly with all pages  
+✔ Explaining best practices for securing the API key and sensitive data using environment variables  
+✔ Suggesting methods to test, monitor, and iteratively improve the chatbot’s accuracy and performance  
+
+Assume I want the chatbot to be as accurate as possible for project-specific questions, provide clear reasoning and guidance, and work within Gemini’s free tier limitations while being efficient, secure, and scalable.
+
+Please proceed with step-by-step instructions, code examples, environment setup procedures, prompt templates, and UI design suggestions so that this chatbot is fully integrated and ready from the start.
