@@ -45,3 +45,15 @@ scikit-learn>=1.7.1
 scipy>=1.16.1
 seaborn>=0.13.2
 streamlit>=1.49.1
+chardet
+matplotlib
+numpy
+pandas
+plotly
+scikit-learn
+scipy
+seaborn
+streamlit
+groq
+openpyxl
+reportlab
