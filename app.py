@@ -170,8 +170,9 @@ def data_upload_page(audit):
         if uploaded_file is not None:
             try:
                 loader = DataLoader()
-                data = loader.load_file(uploaded_file)
+                data, validation_results = loader.load_file(uploaded_file)
                 st.session_state.data = data
+                st.session_state.validation_results = validation_results
                 
                 # Log the upload action
                 audit.log_data_upload(
@@ -185,6 +186,47 @@ def data_upload_page(audit):
                 st.success(f"✅ File loaded successfully! Shape: {shape_info}")
                 st.info(f"📝 Upload logged to audit trail at {pd.Timestamp.now().strftime('%H:%M:%S')}")
                 
+                # Display validation results
+                if validation_results:
+                    st.subheader("📋 Data Validation Report")
+                    
+                    # Critical errors
+                    if validation_results.get('critical_errors'):
+                        for error in validation_results['critical_errors']:
+                            st.error(f"🚨 **Critical Error:** {error}")
+                    
+                    # Data quality issues
+                    if validation_results.get('data_quality_issues'):
+                        with st.expander("⚠️ Data Quality Issues", expanded=True):
+                            for issue in validation_results['data_quality_issues']:
+                                st.warning(f"• {issue}")
+                    
+                    # Logical inconsistencies
+                    if validation_results.get('logical_inconsistencies'):
+                        with st.expander("🔍 Logical Inconsistencies", expanded=True):
+                            for inconsistency in validation_results['logical_inconsistencies']:
+                                st.warning(f"• {inconsistency}")
+                    
+                    # Statistical anomalies
+                    if validation_results.get('statistical_anomalies'):
+                        with st.expander("📊 Statistical Anomalies"):
+                            for anomaly in validation_results['statistical_anomalies']:
+                                st.info(f"**Column '{anomaly['column']}':**")
+                                for detail in anomaly['anomalies']:
+                                    st.write(f"  • {detail}")
+                    
+                    # Remediation suggestions
+                    if validation_results.get('remediation_suggestions'):
+                        with st.expander("💡 Remediation Suggestions"):
+                            for suggestion in validation_results['remediation_suggestions']:
+                                st.info(f"• {suggestion}")
+                    
+                    # Warnings
+                    if validation_results.get('warnings'):
+                        with st.expander("ℹ️ Warnings"):
+                            for warning in validation_results['warnings']:
+                                st.info(f"• {warning}")
+                
                 # Data preview
                 st.subheader("Data Preview")
                 if data is not None and not data.empty:
@@ -192,25 +234,35 @@ def data_upload_page(audit):
                 else:
                     st.warning("No data to preview")
                 
-                # Basic statistics
-                st.subheader("Basic Statistics")
-                col_stats1, col_stats2 = st.columns(2)
+                # Enhanced statistics
+                st.subheader("Enhanced Statistics")
+                col_stats1, col_stats2, col_stats3 = st.columns(3)
                 
                 with col_stats1:
                     if data is not None:
                         st.metric("Rows", f"{data.shape[0]:,}")
-                        st.metric("Numeric Columns", len(data.select_dtypes(include=[np.number]).columns))
+                        st.metric("Columns", data.shape[1])
                     else:
                         st.metric("Rows", "0")
-                        st.metric("Numeric Columns", "0")
+                        st.metric("Columns", "0")
                 
                 with col_stats2:
                     if data is not None:
-                        st.metric("Columns", data.shape[1])
-                        st.metric("Missing Values", f"{data.isnull().sum().sum():,}")
+                        st.metric("Numeric Columns", len(data.select_dtypes(include=[np.number]).columns))
+                        st.metric("Categorical Columns", len(data.select_dtypes(include=['object']).columns))
                     else:
-                        st.metric("Columns", "0")
+                        st.metric("Numeric Columns", "0")
+                        st.metric("Categorical Columns", "0")
+                
+                with col_stats3:
+                    if data is not None:
+                        missing_count = data.isnull().sum().sum()
+                        missing_rate = (missing_count / data.size) * 100 if data.size > 0 else 0
+                        st.metric("Missing Values", f"{missing_count:,}")
+                        st.metric("Missing Rate", f"{missing_rate:.1f}%")
+                    else:
                         st.metric("Missing Values", "0")
+                        st.metric("Missing Rate", "0%")
                 
             except Exception as e:
                 st.error(f"❌ Error loading file: {str(e)}")

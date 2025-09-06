@@ -2,22 +2,27 @@ import pandas as pd
 import streamlit as st
 from io import StringIO
 import chardet
+import logging
+from typing import Tuple, Dict, Any
+from .enhanced_data_validator import EnhancedDataValidator
 
 class DataLoader:
     """Handles loading of CSV and Excel files with various encodings and formats."""
     
     def __init__(self):
         self.supported_formats = ['csv', 'xlsx', 'xls']
+        self.validator = EnhancedDataValidator()
+        self.logger = logging.getLogger(__name__)
     
-    def load_file(self, uploaded_file):
+    def load_file(self, uploaded_file) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """
-        Load a file and return a pandas DataFrame.
+        Load a file and return a pandas DataFrame with validation results.
         
         Args:
             uploaded_file: Streamlit UploadedFile object
             
         Returns:
-            pandas.DataFrame: Loaded data
+            Tuple[pd.DataFrame, Dict]: (loaded_data, validation_results)
         """
         file_extension = uploaded_file.name.split('.')[-1].lower()
         
@@ -26,10 +31,19 @@ class DataLoader:
         
         try:
             if file_extension == 'csv':
-                return self._load_csv(uploaded_file)
+                df = self._load_csv(uploaded_file)
             elif file_extension in ['xlsx', 'xls']:
-                return self._load_excel(uploaded_file)
+                df = self._load_excel(uploaded_file)
+            else:
+                raise ValueError(f"Unsupported file format: {file_extension}")
+            
+            # Comprehensive validation
+            validated_df, validation_results = self.validator.comprehensive_validation(df)
+            
+            return validated_df, validation_results
+            
         except Exception as e:
+            self.logger.error(f"Error loading {file_extension.upper()} file: {str(e)}")
             raise Exception(f"Error loading {file_extension.upper()} file: {str(e)}")
     
     def _load_csv(self, uploaded_file):

@@ -3,12 +3,17 @@ import numpy as np
 from sklearn.impute import KNNImputer
 from scipy import stats
 import re
+import logging
+from typing import Dict, List, Any, Tuple, Optional
+from .enhanced_data_validator import EnhancedDataValidator
 
 class DataCleaner:
     """Comprehensive data cleaning and validation module."""
     
     def __init__(self):
         self.cleaning_report = {}
+        self.validator = EnhancedDataValidator()
+        self.logger = logging.getLogger(__name__)
     
     def clean_data(self, df, config):
         """
@@ -21,12 +26,20 @@ class DataCleaner:
         Returns:
             tuple: (cleaned_df, cleaning_report)
         """
-        # Input validation
-        if df is None or df.empty:
-            raise ValueError("Input DataFrame is empty or None")
+        # Enhanced input validation
+        if df is None:
+            raise ValueError("Input DataFrame is None")
+        
+        if df.empty:
+            self.logger.warning("Input DataFrame is empty")
+            return df, {'error': 'Empty DataFrame provided'}
         
         if not isinstance(config, dict):
             raise ValueError("Configuration must be a dictionary")
+        
+        # Pre-cleaning validation
+        _, pre_validation = self.validator.comprehensive_validation(df)
+        self.cleaning_report['pre_cleaning_validation'] = pre_validation
         
         cleaned_df = df.copy()
         self.cleaning_report = {
@@ -62,12 +75,16 @@ class DataCleaner:
         return cleaned_df, self.cleaning_report
     
     def _handle_missing_values(self, df, config):
-        """Handle missing values using specified method."""
-        method = config['missing_method']
+        """Handle missing values using specified method with enhanced error handling."""
+        method = config.get('missing_method', 'None')
+        if method == 'None':
+            return df
+            
         numeric_cols = df.select_dtypes(include=[np.number]).columns
+        categorical_cols = df.select_dtypes(include=['object']).columns
         
-        if len(numeric_cols) == 0:
-            self.cleaning_report['warnings'].append("No numeric columns found for missing value imputation")
+        if len(numeric_cols) == 0 and len(categorical_cols) == 0:
+            self.cleaning_report['warnings'].append("No columns found for missing value imputation")
             return df
         
         initial_missing = df.isnull().sum().sum()
@@ -87,20 +104,57 @@ class DataCleaner:
                 
             elif method == 'KNN':
                 k = config.get('knn_neighbors', 5)
-                # Check if we have enough data for KNN
+                # Enhanced KNN validation
+                if len(numeric_cols) == 0:
+                    self.cleaning_report['warnings'].append("No numeric columns for KNN imputation")
+                    return df
+                    
                 non_missing_rows = df[numeric_cols].dropna().shape[0]
                 if non_missing_rows < k:
-                    self.cleaning_report['warnings'].append(f"Not enough complete cases ({non_missing_rows}) for KNN with k={k}")
-                    # Fall back to mean imputation
+                    self.cleaning_report['warnings'].append(f"Not enough complete cases ({non_missing_rows}) for KNN with k={k}. Using median imputation.")
+                    # Fall back to median imputation (more robust than mean)
                     for col in numeric_cols:
                         if df[col].notna().any():
-                            df[col] = df[col].fillna(df[col].mean())
+                            df[col] = df[col].fillna(df[col].median())
+                elif non_missing_rows < 2 * k:
+                    # Reduce k if we have limited data
+                    k = max(1, non_missing_rows // 2)
+                    self.cleaning_report['warnings'].append(f"Reduced KNN neighbors to k={k} due to limited data")
+                    try:
+                        imputer = KNNImputer(n_neighbors=k)
+                        df[numeric_cols] = imputer.fit_transform(df[numeric_cols])
+                    except Exception as e:
+                        self.cleaning_report['warnings'].append(f"KNN imputation failed: {str(e)}. Using median imputation.")
+                        for col in numeric_cols:
+                            if df[col].notna().any():
+                                df[col] = df[col].fillna(df[col].median())
                 else:
-                    imputer = KNNImputer(n_neighbors=k)
-                    df[numeric_cols] = imputer.fit_transform(df[numeric_cols])
+                    try:
+                        imputer = KNNImputer(n_neighbors=k)
+                        df[numeric_cols] = imputer.fit_transform(df[numeric_cols])
+                    except Exception as e:
+                        self.cleaning_report['warnings'].append(f"KNN imputation failed: {str(e)}. Using median imputation.")
+                        for col in numeric_cols:
+                            if df[col].notna().any():
+                                df[col] = df[col].fillna(df[col].median())
+        
+        # Handle categorical missing values
+        if len(categorical_cols) > 0:
+            for col in categorical_cols:
+                if df[col].isna().any():
+                    # Use mode for categorical variables, or 'Unknown' if no mode
+                    if df[col].notna().any():
+                        mode_value = df[col].mode()
+                        if len(mode_value) > 0:
+                            df[col] = df[col].fillna(mode_value[0])
+                        else:
+                            df[col] = df[col].fillna('Unknown')
+                    else:
+                        df[col] = df[col].fillna('Unknown')
         
         except Exception as e:
-            self.cleaning_report['warnings'].append(f"Error in missing value imputation: {str(e)}")
+            self.logger.error(f"Critical error in missing value imputation: {str(e)}")
+            self.cleaning_report['warnings'].append(f"Critical error in missing value imputation: {str(e)}")
             return df
         
         final_missing = df.isnull().sum().sum()
