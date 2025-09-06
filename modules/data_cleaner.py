@@ -138,19 +138,19 @@ class DataCleaner:
                             if df[col].notna().any():
                                 df[col] = df[col].fillna(df[col].median())
         
-        # Handle categorical missing values
-        if len(categorical_cols) > 0:
-            for col in categorical_cols:
-                if df[col].isna().any():
-                    # Use mode for categorical variables, or 'Unknown' if no mode
-                    if df[col].notna().any():
-                        mode_value = df[col].mode()
-                        if len(mode_value) > 0:
-                            df[col] = df[col].fillna(mode_value[0])
+            # Handle categorical missing values
+            if len(categorical_cols) > 0:
+                for col in categorical_cols:
+                    if df[col].isna().any():
+                        # Use mode for categorical variables, or 'Unknown' if no mode
+                        if df[col].notna().any():
+                            mode_value = df[col].mode()
+                            if len(mode_value) > 0:
+                                df[col] = df[col].fillna(mode_value[0])
+                            else:
+                                df[col] = df[col].fillna('Unknown')
                         else:
                             df[col] = df[col].fillna('Unknown')
-                    else:
-                        df[col] = df[col].fillna('Unknown')
         
         except Exception as e:
             self.logger.error(f"Critical error in missing value imputation: {str(e)}")
